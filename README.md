@@ -9,7 +9,7 @@
 
 Your own Claude Code, live in Grasshopper. One click connects a Claude terminal to your canvas: it reads the data actually flowing through your wires, writes typed Python components, runs them, reads Grasshopper's errors, and fixes them — while you watch.
 
-**Status: in development.** The core loop is live-validated on Rhino 8; packaging for the Rhino Package Manager is not done yet. Until then, build from source (below).
+**Install:** in Rhino 8 on Windows, run `_PackageManager`, search **wireify**, install, restart Rhino. Mac and Rhino 7 are planned. Building from source works too (below).
 
 ## How it works
 
@@ -30,7 +30,7 @@ The converted component is a stock Rhino component. **Files you save have no Wir
 
 ## Requirements
 
-- **Rhino 8, SR18 or newer** (Windows or Mac). Rhino 7 / IronPython 2 support is planned but not built yet.
+- **Rhino 8, SR18 or newer**, Windows (the Package Manager build is Windows-only today; Mac is planned). Rhino 7 / IronPython 2 support is planned but not built yet.
 - **Claude Code** installed and signed in. It needs a **paid plan — Pro, Max, Team, or Enterprise — or a Claude Console (API) account with credits. Free claude.ai accounts cannot run Claude Code**; a free login is redirected to upgrade.
 
 Install Claude Code (the native installer keeps itself updated and puts `claude` on PATH):
@@ -45,7 +45,7 @@ Then run `claude` once in any terminal and complete the browser login. Check wit
 
 **Model and effort:** Wireify sessions default to Sonnet at high reasoning effort — the loop is tool orchestration, and the faster tier keeps it responsive. The terminal is spawned as `claude --model <m> --effort <e>`, with both values read from `wireify.json` at the home's root. Wireify seeds `{"model": "sonnet", "effort": "high"}` and merges per key: values you edit are never changed, while newly introduced options are added on Connect. Switch either any time with `/model` inside the session (the spawn defaults reapply on the next Connect); edit the file to change one definition's standing choice, or set a value to `"default"` to use your own Claude setting for it (a deleted line comes back on the next Connect — `"default"` is the release switch).
 
-## Build from source (pre-release)
+## Build from source
 
 ```
 dotnet build Wireify.sln

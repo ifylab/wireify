@@ -3,9 +3,10 @@
 All notable changes to Wireify are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
-## [Unreleased]
+## [0.1.0] - 2026-07-04
 
-First working version, live-validated on Rhino 8.29 (Windows):
+First public release, on the Rhino Package Manager (Windows). Live-validated on
+Rhino 8.29 (Windows):
 
 - In-process MCP server inside Grasshopper (official C# SDK, streamable HTTP, stateless)
   on `127.0.0.1:9473+`, loopback-only, per-session secret.
