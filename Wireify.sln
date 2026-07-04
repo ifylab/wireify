@@ -1,0 +1,57 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{273F75C1-08A7-46CE-B8CD-93252903740D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireifyCore", "src\WireifyCore\WireifyCore.csproj", "{EB94D113-0D46-4E74-808B-4EDA336E218A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{B0943FA1-E8CC-45C5-97A3-A6CEB378A10C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireifyCore.Tests", "tests\WireifyCore.Tests\WireifyCore.Tests.csproj", "{CBBA37CC-E041-4F2F-A42D-1ED330F7B24F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireifyGh", "src\WireifyGh\WireifyGh.csproj", "{AF1E28E8-579C-47EA-9CB1-9BC7A09F3C1E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireifyContract", "src\WireifyContract\WireifyContract.csproj", "{8BD144A4-2254-48B1-AB63-E493C6A9D4EA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Wireify", "src\Wireify\Wireify.csproj", "{9E68E355-96DB-4903-83C4-D8389A8BE38F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EB94D113-0D46-4E74-808B-4EDA336E218A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EB94D113-0D46-4E74-808B-4EDA336E218A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EB94D113-0D46-4E74-808B-4EDA336E218A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EB94D113-0D46-4E74-808B-4EDA336E218A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CBBA37CC-E041-4F2F-A42D-1ED330F7B24F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CBBA37CC-E041-4F2F-A42D-1ED330F7B24F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CBBA37CC-E041-4F2F-A42D-1ED330F7B24F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CBBA37CC-E041-4F2F-A42D-1ED330F7B24F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF1E28E8-579C-47EA-9CB1-9BC7A09F3C1E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF1E28E8-579C-47EA-9CB1-9BC7A09F3C1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF1E28E8-579C-47EA-9CB1-9BC7A09F3C1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF1E28E8-579C-47EA-9CB1-9BC7A09F3C1E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8BD144A4-2254-48B1-AB63-E493C6A9D4EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BD144A4-2254-48B1-AB63-E493C6A9D4EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BD144A4-2254-48B1-AB63-E493C6A9D4EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8BD144A4-2254-48B1-AB63-E493C6A9D4EA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9E68E355-96DB-4903-83C4-D8389A8BE38F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9E68E355-96DB-4903-83C4-D8389A8BE38F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9E68E355-96DB-4903-83C4-D8389A8BE38F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9E68E355-96DB-4903-83C4-D8389A8BE38F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{EB94D113-0D46-4E74-808B-4EDA336E218A} = {273F75C1-08A7-46CE-B8CD-93252903740D}
+		{CBBA37CC-E041-4F2F-A42D-1ED330F7B24F} = {B0943FA1-E8CC-45C5-97A3-A6CEB378A10C}
+		{AF1E28E8-579C-47EA-9CB1-9BC7A09F3C1E} = {273F75C1-08A7-46CE-B8CD-93252903740D}
+		{8BD144A4-2254-48B1-AB63-E493C6A9D4EA} = {273F75C1-08A7-46CE-B8CD-93252903740D}
+		{9E68E355-96DB-4903-83C4-D8389A8BE38F} = {273F75C1-08A7-46CE-B8CD-93252903740D}
+	EndGlobalSection
+EndGlobal

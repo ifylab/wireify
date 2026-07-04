@@ -1,0 +1,15 @@
+# build
+bin/
+obj/
+dist/
+*.user
+
+# local orientation + scratch (never committed)
+CLAUDE.md
+.claude/
+_scratch/
+.impeccable/
+
+# os
+.DS_Store
+Thumbs.db

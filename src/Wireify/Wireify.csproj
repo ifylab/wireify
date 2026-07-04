@@ -1,0 +1,57 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net7.0 = Rhino 8's runtime (loads on .NET 8 via roll-forward). net48/Rhino 7 added later. -->
+    <TargetFramework>net7.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <TargetExt>.rhp</TargetExt>
+    <AssemblyName>Wireify</AssemblyName>
+    <RootNamespace>Wireify</RootNamespace>
+    <!-- CA1416: System.Drawing.Icon is flagged windows-only, but Rhino ships a cross-platform
+         System.Drawing at runtime and Panels.RegisterPanel takes an Icon on both OSes (SampleCsEto). -->
+    <NoWarn>NU1701;CA1416</NoWarn>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- compile-only against the Rhino host (brings Rhino.UI + Eto) -->
+    <PackageReference Include="RhinoCommon" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+    <!-- compile-only: Rhino 8 ships System.Drawing.Common in its runtime -->
+    <PackageReference Include="System.Drawing.Common" Version="7.0.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The typed cross-ALC seam; loads in the Default context beside this .rhp. -->
+    <ProjectReference Include="..\WireifyContract\WireifyContract.csproj" />
+    <!-- Build WireifyCore first, but DO NOT compile-reference it: it must load only in the isolated
+         context at runtime, never into the Default context this .rhp lives in. -->
+    <ProjectReference Include="..\WireifyCore\WireifyCore.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Bootstrap code shared as source with the .gha entry (one pattern, two assemblies). -->
+    <Compile Include="..\WireifyEntry.Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\wireify.ico" />
+  </ItemGroup>
+
+  <!-- Bundle WireifyCore + its dependencies beside the .rhp so the IsolatedLoadContext loads them
+       from our own folder, plus the home-template the scaffolder renders per-.gh homes from.
+       In the shipped Yak package the .rhp and .gha share one folder; in dev each bin has a copy. -->
+  <Target Name="BundleWireifyCore" AfterTargets="Build">
+    <ItemGroup>
+      <_CoreOut Include="$(MSBuildThisFileDirectory)..\WireifyCore\bin\$(Configuration)\net7.0\*.dll" />
+      <_CoreOut Include="$(MSBuildThisFileDirectory)..\WireifyCore\bin\$(Configuration)\net7.0\*.json" />
+      <_HomeTemplate Include="$(MSBuildThisFileDirectory)..\..\home-template\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CoreOut)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_HomeTemplate)" DestinationFolder="$(OutDir)home-template\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

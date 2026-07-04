@@ -1,0 +1,9 @@
+Wireify
+Copyright 2026 Hossein Zargar
+
+Licensed under the Apache License, Version 2.0.
+
+This package bundles agent skills rendered into per-definition homes from
+home-template/skills/. Two of those skills are vendored community content
+under the MIT License; their sources and license texts are recorded in
+home-template/skills/PROVENANCE.md.

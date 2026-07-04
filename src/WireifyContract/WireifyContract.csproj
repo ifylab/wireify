@@ -1,0 +1,17 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.0 + zero dependencies: this assembly loads ONCE in the Default load context
+         and is the only type surface shared across the ALC boundary (entry .rhp/.gha on one side,
+         WireifyCore + the MCP SDK inside the IsolatedLoadContext on the other). Keep it dependency-
+         free so nothing here can ever collide with Rhino's or the SDK's assemblies. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>WireifyContract</AssemblyName>
+    <RootNamespace>WireifyContract</RootNamespace>
+  </PropertyGroup>
+
+</Project>

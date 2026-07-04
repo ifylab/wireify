@@ -1,0 +1,21 @@
+name: wireify
+version: 0.1.0
+authors:
+  - Hossein Zargar
+description: >
+  Your own Claude Code, live in Grasshopper. Stage inputs on a numbered Wireify socket,
+  say what the component should do, and it converts in place into a stock Python 3 script
+  component - wires kept, live wire data read before a line is written, runtime errors fixed
+  in a loop. Saved definitions carry no Wireify dependency. Requires Claude Code
+  (Pro/Max/Team/Enterprise or a Claude Console account) on the same machine.
+url: https://ifylab.dev
+keywords:
+  - grasshopper
+  - python
+  - scripting
+  - ai
+  - claude
+  - mcp
+  - agent
+  - automation
+icon: icon.png

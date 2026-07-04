@@ -1,0 +1,38 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net7.0 = Rhino 8 .NET-Core runtime; net48 = Rhino 7 / IronPython-2 fallback (Windows).
+         Both layers (.Core MCP host added later, plus Connect + Bridge) run on both. -->
+    <TargetFrameworks>net7.0;net48</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>WireifyCore</AssemblyName>
+    <RootNamespace>WireifyCore</RootNamespace>
+    <NoWarn>NU1701</NoWarn>
+    <!-- ModelContextProtocol.Core pulls the .NET-10 out-of-band polyfills (System.Text.Json,
+         System.Net.ServerSentEvents, ...). They restore + run on net7.0 (Rhino 8's runtime) and
+         net48 via netstandard2.0, but warn that net7 is untested. Rhino 8 is net7, so suppress. -->
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+    <!-- WireifyCore is loaded dynamically (the entry .gha loads it into an isolated ALC); this
+         emits its deps.json + copies all runtime deps to bin so the isolated context resolves them. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The shared cross-ALC contract (interface + DTOs); loads in the Default context. -->
+    <ProjectReference Include="..\WireifyContract\WireifyContract.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- build-only: lets net48 cross-compile from macOS/Linux (reference assemblies, no mono) -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- MCP host + tool surface; brings System.Text.Json transitively. netstandard2.0 asset on net48. -->
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.0.0-preview.1" />
+    <!-- compile-only against the Rhino host; never copied to output (runtime-provided by Rhino) -->
+    <PackageReference Include="RhinoCommon" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+    <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

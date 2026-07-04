@@ -1,0 +1,33 @@
+<!-- wireify:begin — this block is managed by Wireify and refreshed on every Connect. Anything below the end marker is yours; Wireify never rewrites it. -->
+# Wireify project home — {{GH_FILE}}
+
+This directory is a Wireify home for the Grasshopper definition **{{GH_FILE}}**. Your own Claude Code is connected to that live canvas through the local `wireify` MCP server (loopback, this project's `.mcp.json`). You co-develop Python on the canvas: introspect the wired inputs, write typed components, run them, read Grasshopper's errors, and fix.
+
+## Start here
+
+- **`wireify-loop`** is the entry skill — it drives the live introspect -> typed-Python -> run -> fix loop and the tool order. Use it for any Grasshopper Python work.
+- The user stages tasks on **numbered Wireify sockets** ("do #3: ..."): resolve the number through `get_document_summary`'s `wireify` block, write the script with the staged input names, and `convert_staged` — details in `wireify-loop`.
+- Deep Rhino/GH API and code patterns: **`scripting-reference`**. GH dev workflow + validation discipline: **`rhino-grasshopper-dev`**. Porting IronPython 2 -> CPython 3: **`wireify-port`**. Structural/AEC engineering semantics: **`aec-structural`** (when the numbers are engineering quantities).
+
+## Answering questions
+
+- Vague canvas nouns — "the lines", "the tags", "the points" — refer to the **live canvas** by default. Orient with ONE `get_document_summary` call (`includeStagedData: true` when sockets are staged) BEFORE asking any clarifying question; the canvas usually disambiguates. Never open with a question you could have answered by looking.
+
+## Conventions
+
+- Standing preferences (units, tolerance, libraries, code style, AEC conventions) live in the shared **`~/.ify/wireify/defaults.md`** — honour them; confirm anything ambiguous rather than assuming.
+- Default runtime is **CPython 3** (`#! python 3` auto-prepended; `# r:` for pip deps). Use IronPython 2 only when the target requires it, and never mix the two runtimes' idioms.
+- Preserve Grasshopper data-tree structure unless explicitly restructuring. Validate at boundaries; surface failures as runtime messages, never silently.
+
+## Memory
+
+This definition's lesson ledger is `MEMORY.md` in this directory, imported below — its contents are already in your context every session. It is a separate file from Claude Code's own auto-memory (which stays empty here); answer "what do you remember" questions from the ledger, not from the auto-memory. Record what failed and what fixed it as you go — append lessons to `MEMORY.md`, so the definition gets smarter each session.
+
+@MEMORY.md
+
+## Trust
+
+- This is your Claude, your subscription. Wireify hosts a local tool server only; it makes no model calls and never sees your data, tokens, or canvas beyond this machine.
+<!-- wireify:end -->
+
+Notes below this line are yours — Wireify never touches them.

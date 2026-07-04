@@ -1,0 +1,61 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net7.0-windows + WinForms because the GH1 canvas API surfaces System.Windows.Forms types
+         (mouse events, context menus) — the same shape the official Rhino 8 Grasshopper template
+         emits. Mac Rhino 8 ships WinForms/System.Drawing facades (GH1's canvas itself is WinForms),
+         and EnableWindowsTargeting lets the mac-side dev build compile. net48/Rhino 7 added later. -->
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <TargetExt>.gha</TargetExt>
+    <AssemblyName>WireifyGh</AssemblyName>
+    <RootNamespace>WireifyGh</RootNamespace>
+    <NoWarn>NU1701</NoWarn>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- compile-only against the Rhino host (pulls RhinoCommon transitively) -->
+    <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The typed cross-ALC seam; loads in the Default context beside this .gha. -->
+    <ProjectReference Include="..\WireifyContract\WireifyContract.csproj" />
+    <!-- Build WireifyCore first, but DO NOT compile-reference it: it must load only in the isolated
+         context at runtime, never into the Default context this .gha lives in. -->
+    <ProjectReference Include="..\WireifyCore\WireifyCore.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Bootstrap code shared as source with the .rhp entry (one pattern, two assemblies). -->
+    <Compile Include="..\WireifyEntry.Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Brand icons from the .ify design-system canvas (assets/brand/ holds the vector source). -->
+    <EmbeddedResource Include="Resources\wireify-24.png" />
+    <EmbeddedResource Include="Resources\wireify-16.png" />
+  </ItemGroup>
+
+  <!-- Bundle WireifyCore + its dependencies beside the .gha so the IsolatedLoadContext loads them
+       from our own folder (the framework's older System.Text.Json must not win), plus the
+       home-template the scaffolder renders per-.gh homes from. -->
+  <Target Name="BundleWireifyCore" AfterTargets="Build">
+    <ItemGroup>
+      <!-- Core stays plain net7.0 (runtime-neutral); it loads fine into this -windows entry. -->
+      <_CoreOut Include="$(MSBuildThisFileDirectory)..\WireifyCore\bin\$(Configuration)\net7.0\*.dll" />
+      <_CoreOut Include="$(MSBuildThisFileDirectory)..\WireifyCore\bin\$(Configuration)\net7.0\*.json" />
+      <_HomeTemplate Include="$(MSBuildThisFileDirectory)..\..\home-template\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CoreOut)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_HomeTemplate)" DestinationFolder="$(OutDir)home-template\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
