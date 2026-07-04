@@ -13,7 +13,7 @@ Your own Claude Code, live in Grasshopper. One click connects a Claude terminal 
 
 ## How it works
 
-- The plugin hosts a small MCP server inside Grasshopper, on `127.0.0.1:9473` (or the next free port). Loopback only, gated by a per-session secret. It never leaves your machine.
+- The plugin hosts a small MCP server inside Grasshopper, on `127.0.0.1:9473` (or the next free port). Loopback only, gated by a per-session secret. It never leaves your machine. It runs the official MCP C# SDK at the current protocol revision; long-running operations execute as background MCP tasks.
 - **Wireify makes no AI calls and needs no account of its own.** It connects *your* Claude Code — your subscription, your data boundaries. The plugin only exposes canvas tools to it.
 - Each `.gh` definition gets its own agent home under `~/.ify/wireify/projects/`, scaffolded with Grasshopper skills and a memory that accumulates what worked. Claude starts warm, and gets warmer per definition.
 
@@ -43,7 +43,7 @@ Install Claude Code (the native installer keeps itself updated and puts `claude`
 
 Then run `claude` once in any terminal and complete the browser login. Check with `claude auth status` (or `/status` inside a session, which also shows your plan). **Install or update Claude Code before starting Rhino** — Rhino captures PATH at startup, so a fresh install needs a Rhino restart to be seen.
 
-**Model and effort:** Wireify sessions default to Sonnet at high reasoning effort — the loop is tool orchestration, and the faster tier keeps it responsive. The terminal is spawned as `claude --model <m> --effort <e>`, with both values read from `wireify.json` at the home's root. Wireify seeds `{"model": "sonnet", "effort": "high"}` and merges per key: values you edit are never changed, while newly introduced options are added on Connect. Switch either any time with `/model` inside the session (the spawn defaults reapply on the next Connect); edit the file to change one definition's standing choice, or set a value to `"default"` to use your own Claude setting for it (a deleted line comes back on the next Connect — `"default"` is the release switch).
+**Model and effort:** Wireify sessions default to Sonnet 5 at high reasoning effort — the loop is tool orchestration, and the fast frontier tier keeps it responsive. The terminal is spawned as `claude --model <m> --effort <e>`, with both values read from `wireify.json` at the home's root. Wireify seeds `{"model": "sonnet", "effort": "high"}` and merges per key: values you edit are never changed, while newly introduced options are added on Connect. Switch either any time with `/model` inside the session (the spawn defaults reapply on the next Connect); edit the file to change one definition's standing choice, or set a value to `"default"` to use your own Claude setting for it (a deleted line comes back on the next Connect — `"default"` is the release switch).
 
 ## Build from source
 
