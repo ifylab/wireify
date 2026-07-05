@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+# Everything except the thin Rhino entry layers is testable headless (see
+# CONTRIBUTING.md); the Rhino/Grasshopper references restore from nuget.org,
+# so the full solution builds on a clean runner. Windows because of the
+# net48 and net7.0-windows targets.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            7.0.x
+            8.0.x
+      - run: dotnet build Wireify.sln -c Release
+      - run: dotnet test Wireify.sln -c Release --no-build
