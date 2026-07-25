@@ -6,7 +6,8 @@ description: >
   Your own Claude Code, live in Grasshopper. Stage inputs on a numbered Wireify socket,
   say what the component should do, and it converts in place into a stock Python 3 script
   component - wires kept, live wire data read before a line is written, runtime errors fixed
-  in a loop. Saved definitions carry no Wireify dependency. Built on the official
+  in a loop. It also reads, runs, and ports legacy GhPython (IronPython 2) components to
+  Python 3. Saved definitions carry no Wireify dependency. Built on the official
   MCP C# SDK at the current protocol revision; sessions default to Sonnet 5.
   Requires Claude Code (Pro/Max/Team/Enterprise or a Claude Console account)
   on the same machine.
@@ -17,7 +18,12 @@ keywords:
   - scripting
   - ai
   - claude
+  - claude-code
+  - copilot
+  - assistant
+  - llm
   - mcp
   - agent
   - automation
+  - ironpython
 icon: icon.png
