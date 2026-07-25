@@ -1320,4 +1320,6 @@ npm install @speckle/viewer
 
 - The Building Coder blog: https://thebuildingcoder.typepad.com/
 
-*This skill provides the scripting foundation for all AEC computational design work. Each referenced API has its own detailed reference document in the `references/` subdirectory for deep-dive usage.*
+*This skill provides the scripting foundation for all AEC computational design work.*
+
+*Wireify note: the upstream source's `references/` subdirectory is not vendored with this skill — the sentence pointing at it was removed here. See `skills/PROVENANCE.md`, Local modifications.*

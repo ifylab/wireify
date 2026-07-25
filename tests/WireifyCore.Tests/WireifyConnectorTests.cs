@@ -17,8 +17,9 @@ public class WireifyConnectorTests
         public string? Launched;
         public string? Model;
         public string? Effort;
-        public ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null)
-        { Launched = homeDir; Model = model; Effort = effort; return null; }
+        public string? Title;
+        public ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null, string? title = null)
+        { Launched = homeDir; Model = model; Effort = effort; Title = title; return null; }
     }
 
     static string TemplateRoot()
@@ -65,6 +66,10 @@ public class WireifyConnectorTests
         var entry = JsonNode.Parse(File.ReadAllText(result.McpConfigPath))!["mcpServers"]!["wireify"]!.AsObject();
         Assert.Equal($"http://127.0.0.1:{host.Port}/mcp", (string)entry["url"]!);
         Assert.Equal("sekret", (string)entry["headers"]!["X-Wireify-Secret"]!);
+        // The session header the server routes documents by, and the window title that makes two
+        // definitions' terminals tellable apart.
+        Assert.Equal(Path.GetFileName(result.HomeDir), (string)entry["headers"]!["X-Wireify-Home"]!);
+        Assert.Equal("Wireify - tower.gh", launcher.Title);
 
         // The home is pre-trusted so the scaffolded allowlist applies from the first session.
         var trustKey = Path.GetFullPath(result.HomeDir).Replace('\\', '/');
@@ -109,6 +114,83 @@ public class WireifyConnectorTests
         Assert.Equal("claude --effort medium", SystemTerminalLauncher.ClaudeCommand(null, "medium"));
         Assert.Equal("claude", SystemTerminalLauncher.ClaudeCommand(null));
         Assert.Equal("claude", SystemTerminalLauncher.ClaudeCommand("bad value && calc", "sudo rm"));
+    }
+
+    [Fact]
+    public void Connect_records_identity_then_adopts_the_home_when_the_file_moves()
+    {
+        var root = TempRoot();
+        var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher());
+
+        using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
+        host.Start(54200);
+
+        // First Connect on a real .gh: identity recorded.
+        var ghDir = Path.Combine(root, "files");
+        Directory.CreateDirectory(ghDir);
+        var oldGh = Path.Combine(ghDir, "tower.gh");
+        File.WriteAllText(oldGh, "definition-bytes");
+        var first = connector.Connect(oldGh, host);
+        var record = HomeIdentity.Read(first.HomeDir);
+        Assert.NotNull(record);
+        Assert.Equal(Path.GetFullPath(oldGh), record!.GhPath);
+        Assert.Equal(64, record.GhSha256!.Length);
+
+        // The definition accumulates a lesson, then the user moves the file.
+        File.AppendAllText(Path.Combine(first.HomeDir, "MEMORY.md"), "\n### 2026-07-09 [W1] the-marker-lesson\n");
+        var newDir = Path.Combine(root, "moved");
+        Directory.CreateDirectory(newDir);
+        var newGh = Path.Combine(newDir, "tower.gh");
+        File.Move(oldGh, newGh);
+
+        // Second Connect: the old home is adopted (COPIED onto the new id), memory intact. The
+        // original stays — a live terminal may occupy it (the Windows lock that killed the move
+        // design, round 18C) — marked so it never matches again, aging via the sweep.
+        var second = connector.Connect(newGh, host);
+
+        Assert.NotEqual(first.HomeDir, second.HomeDir);
+        Assert.Contains(second.Steps, s => s.Message.StartsWith("adopted memory from") && s.Ok);
+        Assert.Contains("the-marker-lesson", File.ReadAllText(Path.Combine(second.HomeDir, "MEMORY.md")));
+        Assert.Equal(Path.GetFullPath(newGh), HomeIdentity.Read(second.HomeDir)!.GhPath); // re-keyed to the new path
+        Assert.True(Directory.Exists(first.HomeDir)); // copy, never move
+        var oldRecord = HomeIdentity.Read(first.HomeDir);
+        Assert.Equal(Path.GetFileName(second.HomeDir), oldRecord!.AdoptedInto);
+        Assert.NotNull(oldRecord.OrphanedAtUtc); // archive clock started at adoption
+        // A clean adoption leaves no handoff file behind.
+        Assert.False(File.Exists(Path.Combine(second.HomeDir, ".wireify", "adoption-candidates.json")));
+    }
+
+    [Fact]
+    public void Connect_reports_the_memory_glance_and_regenerates_the_homes_index()
+    {
+        var root = TempRoot();
+        var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher());
+
+        using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
+        host.Start(54300);
+
+        var ghDir = Path.Combine(root, "files");
+        Directory.CreateDirectory(ghDir);
+        var gh = Path.Combine(ghDir, "tower.gh");
+        File.WriteAllText(gh, "definition-bytes");
+
+        // Fresh home: the glance says so plainly.
+        var first = connector.Connect(gh, host);
+        Assert.Contains(first.Steps, s => s.Message == "memory: no lessons yet" && s.Kind == "home" && s.Ok);
+
+        // A lesson lands; the next Connect counts and dates it, with the header's usage numbers.
+        File.AppendAllText(Path.Combine(first.HomeDir, "MEMORY.md"),
+            "### 2026-07-09 [W1] marker\nSymptom: s\nCause: c\nFix: f\nApplies-when: a\n");
+        var second = connector.Connect(gh, host);
+        Assert.Contains(second.Steps, s =>
+            s.Message.StartsWith("memory: 1 lesson (last 2026-07-09), ") && s.Message.EndsWith("/8,000 chars"));
+
+        // And the homes index exists at the root, naming this home as active.
+        var index = File.ReadAllText(Path.Combine(root, "homes.md"));
+        Assert.Contains(Path.GetFileName(first.HomeDir), index);
+        Assert.Contains("| active |", index);
     }
 
     [Fact]

@@ -29,7 +29,15 @@ namespace WireifyCore.Connect
         }
 
         public string ProjectsDir => Path.Combine(Root, "projects");
+        /// <summary>Where orphaned homes age out to (their <c>.gh</c> gone for 90+ days) — moved
+        /// whole, never deleted; the adoption scan covers it, so a long-lost definition reopened
+        /// later still recovers its memory.</summary>
+        public string ArchiveDir => Path.Combine(Root, "archive");
         public string SharedDefaults => Path.Combine(Root, "defaults.md");
+        /// <summary>The user-owned cross-definition skill tier (the procedural sibling of
+        /// defaults.md): skill folders here are merged into every home's <c>.claude/skills/</c>
+        /// at Connect, bundled skills winning name collisions.</summary>
+        public string SharedSkillsDir => Path.Combine(Root, "skills");
         public string LogsDir => Path.Combine(Root, "logs");
 
         public string HomeFor(string ghFilePath) => Path.Combine(ProjectsDir, HomeId(ghFilePath));

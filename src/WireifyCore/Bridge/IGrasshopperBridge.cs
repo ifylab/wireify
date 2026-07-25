@@ -16,8 +16,13 @@ namespace WireifyCore.Bridge
 
         /// <summary>Document listing plus the Wireify registry. With
         /// <paramref name="includeStagedData"/> the staged sockets' wired inputs carry their live
-        /// data (same shaping + caps as <see cref="ReadInputData"/>) — orientation in one call.</summary>
-        DocumentSummary GetDocumentSummary(bool includeStagedData = false);
+        /// data (same shaping + caps as <see cref="ReadInputData"/>) — orientation in one call.
+        /// The components list is bounded for production-size canvases (<paramref name="maxComponents"/>,
+        /// &lt;=0 = no cap; optional <paramref name="nameFilter"/> substring); the registry never is.</summary>
+        DocumentSummary GetDocumentSummary(
+            bool includeStagedData = false,
+            int maxComponents = SummaryBounding.DefaultMaxComponents,
+            string? nameFilter = null);
 
         ComponentIntrospection IntrospectComponent(Guid id);
 
@@ -41,15 +46,27 @@ namespace WireifyCore.Bridge
         /// Inject generated source and recompile. On CPython 3 the <c>#! python 3</c> directive is
         /// prepended if absent (RH-96540 drops the language spec without it); omitted for IronPython 2.
         /// With <paramref name="solve"/> (the default) the component is solved after compiling and
-        /// the post-solve report returned — outputs are never stale after a revision.
+        /// the post-solve report returned — outputs are never stale after a revision. A W-component
+        /// whose stamped body fingerprint no longer matches was hand-edited outside Wireify: the
+        /// write refuses with <see cref="ErrorProtocol.ExternalEditCode"/> (current code embedded)
+        /// unless <paramref name="overwriteExternalEdits"/> deliberately discards those edits.
         /// </summary>
-        RuntimeReport? SetSource(Guid id, string source, PythonRuntime runtime, bool solve = true);
+        RuntimeReport? SetSource(Guid id, string source, PythonRuntime runtime, bool solve = true, bool overwriteExternalEdits = false);
 
         /// <summary>Auto-build typed I/O params from the script's variables (validated path).</summary>
         void SetParametersFromScript(Guid id);
 
-        /// <summary>Connect <paramref name="fromOutput"/> of one component into <paramref name="toInput"/> of another.</summary>
-        void Wire(Guid fromId, int fromOutput, Guid toId, int toInput);
+        /// <summary>Connect <paramref name="fromOutput"/> of one component into <paramref name="toInput"/>
+        /// of another, as one undo record. Either end may be a floating param (panel, slider, file
+        /// path) — it is its own single param, addressed with index 0. An occupied target input is
+        /// governed by <paramref name="mode"/>: Strict (default) refuses with
+        /// <see cref="ErrorProtocol.InputWiredCode"/>, Replace swaps the existing wire(s) out,
+        /// Add merges deliberately.</summary>
+        WireResult Wire(Guid fromId, int fromOutput, Guid toId, int toInput, WireMode mode = WireMode.Strict);
+
+        /// <summary>Write text into an existing Panel component (one undo record) — e.g. a file
+        /// path feeding a Read File component. Refuses any non-Panel object.</summary>
+        PanelText SetPanelText(Guid id, string text);
 
         /// <summary>
         /// Convert a staged Wireify socket into a stock Python component in place: create at the
@@ -72,6 +89,10 @@ namespace WireifyCore.Bridge
         /// preserving wires on inputs whose name survives. Returns the resulting introspection.
         /// </summary>
         ComponentIntrospection SetIo(Guid id, IReadOnlyList<IoParamSpec> inputs, IReadOnlyList<IoParamSpec> outputs);
+
+        /// <summary>Delete a Wireify-managed object (a socket or a script component) as one undo
+        /// record — wires included, so ctrl-Z restores everything. Refuses any other object.</summary>
+        DeletedComponent DeleteComponent(Guid id);
 
         // --- Run + read ---
 

@@ -21,7 +21,7 @@ namespace WireifyGh
             {
                 var controller = WireifyGhRuntime.Controller;
                 var info = controller.EnsureServer();
-                RhinoApp.WriteLine($"[wireify] MCP server listening on {info.Url}");
+                RhinoApp.WriteLine($"[wireify] Wireify {info.Build} — MCP server listening on {info.Url}");
                 RhinoApp.WriteLine("[wireify] drop a Wireify component (or run _Wireify) to connect Claude.");
             }
             catch (Exception ex)

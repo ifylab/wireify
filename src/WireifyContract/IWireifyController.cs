@@ -22,6 +22,11 @@ namespace WireifyContract
 
         WireifyConnectionState State { get; }
 
+        /// <summary>The state of a specific definition's session (by .gh path) — what its socket
+        /// button renders, so a freshly opened second definition honestly reads Connect instead of
+        /// inheriting another file's live session. Null/unsaved path = no session.</summary>
+        WireifyConnectionState StateFor(string? ghFilePath);
+
         /// <summary>Absolute path of the active Grasshopper definition, or null when there is no
         /// canvas, no document, or the document has never been saved.</summary>
         string? ActiveDefinitionPath();

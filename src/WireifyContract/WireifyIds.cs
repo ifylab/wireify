@@ -21,6 +21,21 @@ namespace WireifyContract
         /// port is written into the per-home <c>.mcp.json</c>, so client and server always agree.</summary>
         public const int DefaultPort = 9473;
 
+        /// <summary>The Windows textbox paste limit (Int16.MaxValue). Text on a wire at EXACTLY
+        /// this length was almost certainly clipped upstream (a Grasshopper panel paste) — the
+        /// socket warns on it and introspection flags it, because the failure otherwise surfaces
+        /// only as a confusing parse error deep inside the truncated content.</summary>
+        public const int PanelClipTextLength = 32767;
+
+        /// <summary>The one upstream-clip message, used by the socket's orange runtime warning and
+        /// by introspection's data-health warnings alike — the user reads the same story on the
+        /// canvas and in Claude's context.</summary>
+        public static string ClipTextWarning(string paramName, int count = 1)
+            => $"'{paramName}' carries {(count == 1 ? "a text value" : count.ToString(CultureInfo.InvariantCulture) + " text values")} " +
+               $"of exactly {PanelClipTextLength} characters — almost certainly clipped upstream (Grasshopper panels " +
+               "truncate pasted text at that limit). The full content never reached this wire; wire a file path " +
+               "instead and let the script read the file.";
+
         /// <summary>Nickname convention carrying the Wireify number: <c>W3</c> staged,
         /// <c>W3 cull-panels</c> once converted. The number survives conversion because the
         /// nickname does; the document itself is the registry.</summary>

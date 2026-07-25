@@ -28,6 +28,23 @@ public class ConfigMergerTests
     }
 
     [Fact]
+    public void Session_header_rides_the_entry_when_a_home_id_is_given()
+    {
+        var path = Path.Combine(TempDir(), ".mcp.json");
+
+        ConfigMerger.MergeProjectMcpJson(path, 52802, "sek", "tower-a1b2c3d4");
+
+        var headers = JsonNode.Parse(File.ReadAllText(path))!["mcpServers"]!["wireify"]!["headers"]!.AsObject();
+        Assert.Equal("sek", (string)headers["X-Wireify-Secret"]!);
+        Assert.Equal("tower-a1b2c3d4", (string)headers["X-Wireify-Home"]!);
+
+        // Re-Connect without a home id (legacy caller): the whole entry is replaced, header gone.
+        ConfigMerger.MergeProjectMcpJson(path, 52802, "sek");
+        var replaced = JsonNode.Parse(File.ReadAllText(path))!["mcpServers"]!["wireify"]!["headers"]!.AsObject();
+        Assert.False(replaced.ContainsKey("X-Wireify-Home"));
+    }
+
+    [Fact]
     public void Preserves_other_servers_and_keys()
     {
         var path = Path.Combine(TempDir(), ".mcp.json");

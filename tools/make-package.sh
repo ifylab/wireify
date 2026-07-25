@@ -31,6 +31,7 @@ cp -R "$ROOT/src/WireifyGh/bin/Release/net7.0-windows/." "$DIST/net7.0/"
 cp "$ROOT/src/Wireify/bin/Release/net7.0/Wireify.rhp" "$DIST/net7.0/"
 cp "$ROOT/src/Wireify/bin/Release/net7.0/Wireify.deps.json" "$DIST/net7.0/" 2>/dev/null || true
 find "$DIST" -name "*.pdb" -delete
+find "$DIST" -name ".DS_Store" -delete
 
 cp "$ROOT/manifest.yml" "$DIST/manifest.yml"
 

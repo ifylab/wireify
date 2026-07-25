@@ -6,6 +6,8 @@ license: MIT
 
 # Rhino Grasshopper Dev
 
+*Wireify note: where this vendored skill describes live automation through the community RhinoMCP server (`run_python`, example port 4862), that does not apply in a Wireify home — none of those tools exist here. Live canvas automation goes through the `wireify` MCP tools; the `wireify-loop` skill is the entry point. Everything else stands as reference. See `skills/PROVENANCE.md`, Local modifications.*
+
 Use this skill for Rhino 8 and Grasshopper development work that needs repo-first inspection, source-of-truth McNeel guidance, and practical validation. Keep edits small, preserve released component GUIDs, and separate stable engineering logic from Grasshopper UI wrappers where possible. When creating a plugin or a set of connected components, design the workflow data flow first: define the upstream inputs, intermediate data contracts, downstream outputs, component linkages, data-tree topology, and user-facing parameter names before implementing individual components.
 
 Pick the smallest set of references needed. The skill is structured so a single mode usually requires reading only one or two reference files:

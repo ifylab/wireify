@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 using System;
+using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using Grasshopper.Kernel;
 
@@ -68,7 +70,8 @@ namespace WireifyCore.Bridge
         /// <summary>
         /// Recompile after a source change. <c>ReBuild()</c> is an explicit-interface async method
         /// on <c>IScriptObject</c>; we cast, invoke, and wait on the returned Task. Required — set
-        /// source alone does not compile.
+        /// source alone does not compile. A rebuild that faults rethrows its real exception; one
+        /// that outlives the timeout throws instead of silently carrying on with stale state.
         /// </summary>
         public static void ReBuild(IGH_DocumentObject component, TimeSpan timeout)
         {
@@ -78,7 +81,21 @@ namespace WireifyCore.Bridge
                 var mi = itf.GetMethod("ReBuild", Type.EmptyTypes);
                 if (mi is null) continue;
                 var result = mi.Invoke(component, null);
-                if (result is Task task) task.Wait(timeout);
+                if (result is Task task)
+                {
+                    bool finished;
+                    try { finished = task.Wait(timeout); }
+                    catch (AggregateException ae)
+                    {
+                        ExceptionDispatchInfo.Capture(ExceptionUnwrap.Innermost(ae)).Throw();
+                        throw; // unreachable
+                    }
+                    if (!finished)
+                        throw new TimeoutException(
+                            $"script rebuild (recompile) did not finish within {timeout.TotalSeconds:0}s — " +
+                            "the RhinoCode engine looks busy or wedged. Let Rhino settle and retry once; " +
+                            "if it keeps happening, restart Rhino.");
+                }
                 return;
             }
             // No IScriptObject -> nothing to recompile (non-script component); fail soft.
@@ -98,7 +115,10 @@ namespace WireifyCore.Bridge
         /// to give a script component named variables (the same object the component's own ZUI
         /// creates). Ctor + cosmetic members by reflection (unversioned assembly); everything typed
         /// (<c>Access</c>/<c>Optional</c>/<c>CreateAttributes</c>) through the public GH surface.
-        /// The exact member set is pinned live by spike_8.
+        /// The exact member set is pinned live by spike_8. A hint is ALWAYS selected when one is
+        /// available: the requested one, else the dynamic default — a hintless param marshals
+        /// geometry to the script as ghdoc Guids (the legacy rhinoscriptsyntax mode), which is
+        /// never what generated CPython code expects.
         /// </summary>
         public static IGH_Param CreateScriptVariableParam(
             IGH_DocumentObject scriptComponent, string name, GH_ParamAccess access, bool optional, string? typeHint)
@@ -119,10 +139,84 @@ namespace WireifyCore.Bridge
 
             TrySetProperty(param, "PrettyName", name);
             TrySetProperty(param, "AllowTreeAccess", true);
-            if (!string.IsNullOrWhiteSpace(typeHint)) TrySelectTypeHint(param, typeHint!);
+            SelectTypeHint(param, typeHint);
 
             param.CreateAttributes();
             return param;
+        }
+
+        /// <summary>Selected type-hint name on a script variable param, best-effort ("" when the
+        /// param has no hint machinery or none is selected). Primary probe: enumerate the hint
+        /// registry and return the entry whose own <c>Selected</c>/<c>IsSelected</c> flag is set
+        /// (the field-observed shape — a registry-level Selected property does not exist there);
+        /// registry- and param-level members stay as fallbacks.</summary>
+        public static string GetSelectedHintName(IGH_Param param)
+        {
+            try
+            {
+                var hints = param.GetType().GetProperty("TypeHints")?.GetValue(param, null);
+
+                if (hints is System.Collections.IEnumerable enumerable)
+                {
+                    foreach (var hint in enumerable)
+                    {
+                        if (hint is null) continue;
+                        var flag = hint.GetType().GetProperty("Selected")?.GetValue(hint, null)
+                            ?? hint.GetType().GetProperty("IsSelected")?.GetValue(hint, null);
+                        if (flag is true) return HintName(hint) ?? "";
+                    }
+                }
+
+                var selected = hints?.GetType().GetProperty("Selected")?.GetValue(hints, null)
+                    ?? hints?.GetType().GetProperty("Current")?.GetValue(hints, null)
+                    ?? hints?.GetType().GetProperty("CurrentHint")?.GetValue(hints, null)
+                    ?? hints?.GetType().GetProperty("SelectedHint")?.GetValue(hints, null)
+                    ?? hints?.GetType().GetMethod("GetSelected", Type.EmptyTypes)?.Invoke(hints, null)
+                    ?? param.GetType().GetProperty("TypeHint")?.GetValue(param, null)
+                    ?? param.GetType().GetProperty("Hint")?.GetValue(param, null)
+                    ?? param.GetType().GetProperty("HintName")?.GetValue(param, null);
+                return selected is null ? "" : HintName(selected) ?? "";
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>Available type-hint names on a script variable param (empty for ordinary
+        /// params, or when the registry cannot be enumerated). Deduplicated — distinct registry
+        /// entries can render the same display name.</summary>
+        public static IReadOnlyList<string> GetAvailableHintNames(IGH_Param param)
+        {
+            var names = new List<string>();
+            try
+            {
+                var hints = param.GetType().GetProperty("TypeHints")?.GetValue(param, null);
+                if (hints is not System.Collections.IEnumerable enumerable) return names;
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var hint in enumerable)
+                {
+                    if (hint is null) continue;
+                    var name = HintName(hint);
+                    if (!string.IsNullOrEmpty(name) && seen.Add(name!)) names.Add(name!);
+                }
+            }
+            catch { /* enumeration is best-effort — callers treat empty as unknown */ }
+            return names;
+        }
+
+        static string? HintName(object hint)
+        {
+            if (hint is string s) return s;
+            try
+            {
+                if (hint.GetType().GetProperty("Name")?.GetValue(hint, null) is string name
+                    && name.Length > 0) return name;
+                if (hint.GetType().GetProperty("TypeName")?.GetValue(hint, null) is string typeName
+                    && typeName.Length > 0) return typeName;
+                var text = hint.ToString();
+                return string.IsNullOrEmpty(text) || text == hint.GetType().FullName
+                    ? hint.GetType().Name
+                    : text;
+            }
+            catch { return null; }
         }
 
         /// <summary>Re-sync a script component after param changes (required per the official
@@ -148,17 +242,23 @@ namespace WireifyCore.Bridge
             catch { /* cosmetic member — never fail the build over it */ }
         }
 
-        static void TrySelectTypeHint(object param, string hint)
+        /// <summary>Select the requested type hint. A miss against a known hint list throws,
+        /// naming what exists — a typo must not silently leave the param generic. No request,
+        /// no selection: the auto-hint decision is made upstream, from the live wired data,
+        /// because the registry offers no dynamic/object entry to default to.</summary>
+        static void SelectTypeHint(IGH_Param param, string? requestedHint)
         {
-            try
-            {
-                var hintsProp = param.GetType().GetProperty("TypeHints");
-                var hints = hintsProp?.GetValue(param, null);
-                if (hints is null) return;
-                var select = hints.GetType().GetMethod("Select", new[] { typeof(string) });
-                select?.Invoke(hints, new object[] { hint });
-            }
-            catch { /* hints are sugar — generic params still work */ }
+            if (string.IsNullOrWhiteSpace(requestedHint)) return;
+
+            var available = GetAvailableHintNames(param);
+            var chosen = HintSelection.PickExplicit(requestedHint!.Trim(), available);
+
+            var hints = param.GetType().GetProperty("TypeHints")?.GetValue(param, null);
+            var select = hints?.GetType().GetMethod("Select", new[] { typeof(string) });
+            if (select is null)
+                throw new MissingMethodException(
+                    $"this component's params expose no hint selection — cannot apply type hint '{requestedHint}'.");
+            select.Invoke(hints, new object[] { chosen });
         }
     }
 }

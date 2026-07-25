@@ -38,23 +38,46 @@ namespace WireifyCore.Hosting
         readonly ITerminalLauncher _launcher;
         readonly IUiInvoker _ui = new RhinoUiInvoker();
         readonly List<WireifyLogLine> _log = new();
+        readonly SessionLogWriter _sessionLog;
+        // One session per Connected definition: document binding for the bridge's routing, state
+        // for that definition's socket/panel, terminal liveness per session — so a second open
+        // definition never reads (or mutates) another file's session.
+        readonly SessionRegistry _sessions = new();
 
         WireifyMcpHost? _host;
-        WireifyConnectionState _state = WireifyConnectionState.ServerStopped;
-        bool _sawAuth;
-        ITerminalHandle? _terminal; // the CURRENT launch; a superseded handle's exit is ignored
+        WireifyConnectionState _serverState = WireifyConnectionState.ServerStopped;
+        bool _loggedLegacyAuth;
 
         internal WireifyController(ITerminalLauncher launcher)
-            => _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+        {
+            _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+            // The writer's health notice goes to the panel + console only — routing it through
+            // Log would feed it back into the writer it is reporting about.
+            _sessionLog = new SessionLogWriter(new WireifyPaths().LogsDir, DateTime.Now, SessionLogNotice);
+        }
 
         public event Action<WireifyConnectionState>? StateChanged;
         public event Action<WireifyConnectStep>? ConnectStepCompleted;
         public event Action<WireifyLogLine>? LogEmitted;
         public event Action<Guid, bool>? ComponentActivityChanged;
 
+        /// <summary>The global dot: the server level or the most-advanced session, whichever is
+        /// higher — "something is live". Per-definition truth is <see cref="StateFor"/>.</summary>
         public WireifyConnectionState State
         {
-            get { lock (_gate) return _state; }
+            get
+            {
+                var sessions = _sessions.MaxState;
+                lock (_gate) return sessions > _serverState ? sessions : _serverState;
+            }
+        }
+
+        /// <summary>The state of THIS definition's session (by .gh path) — what its socket button
+        /// renders. No session for the path = the server level (so the button reads Connect).</summary>
+        public WireifyConnectionState StateFor(string? ghFilePath)
+        {
+            var session = _sessions.StateFor(ghFilePath);
+            lock (_gate) return session > _serverState ? session : _serverState;
         }
 
         public WireifyServerInfo ServerInfo
@@ -64,8 +87,8 @@ namespace WireifyCore.Hosting
                 lock (_gate)
                 {
                     return _host is { } h
-                        ? new WireifyServerInfo(h.Port, $"http://127.0.0.1:{h.Port}/mcp", h.IsListening)
-                        : new WireifyServerInfo(0, "", false);
+                        ? new WireifyServerInfo(h.Port, $"http://127.0.0.1:{h.Port}/mcp", h.IsListening, WireifyBuild.Describe())
+                        : new WireifyServerInfo(0, "", false, WireifyBuild.Describe());
                 }
             }
         }
@@ -85,24 +108,41 @@ namespace WireifyCore.Hosting
             {
                 if (_host is null)
                 {
-                    var secret = Guid.NewGuid().ToString("N"); // per-session; lands in .mcp.json at Connect
+                    var secret = Guid.NewGuid().ToString("N"); // per-Rhino-run; lands in .mcp.json at Connect
+                    // Calls route to the calling session's document (the X-Wireify-Home header,
+                    // snapshotted per serialized call by the marshalling seam), so a session can
+                    // never touch another definition just because its canvas is in front. Clients
+                    // without a session header keep the legacy active-document behavior.
+                    var resolver = new SessionDocumentResolver(ActiveDocument, _sessions.Binding);
                     var bridge = new MarshallingBridge(
-                        new GrasshopperBridge(ActiveDocument), _ui,
-                        (message, ok) => Log("[wireify]", message, ok));
+                        new GrasshopperBridge(resolver), _ui,
+                        (message, ok) => Log("[wireify]", message, ok),
+                        callContext: resolver.SetCallContext,
+                        // File-only: the panel already shows each outcome; the file needs the
+                        // entry too, so a call that never returns is visible in a post-mortem.
+                        entryLog: tool => _sessionLog.Append(
+                            new WireifyLogLine(DateTime.Now, "[wireify]", $"→ {tool}", true)));
                     var tools = new WireifyTools(bridge, OnToolActivity);
                     _host = new WireifyMcpHost(tools, secret);
                     _host.AuthenticatedRequest += OnAuthenticatedRequest;
                     _host.Start(WireifyIds.DefaultPort);
-                    if (_state == WireifyConnectionState.ServerStopped) _state = WireifyConnectionState.ServerListening;
+                    if (_serverState == WireifyConnectionState.ServerStopped) _serverState = WireifyConnectionState.ServerListening;
                     started = true;
                 }
-                info = new WireifyServerInfo(_host.Port, $"http://127.0.0.1:{_host.Port}/mcp", _host.IsListening);
+                info = new WireifyServerInfo(_host.Port, $"http://127.0.0.1:{_host.Port}/mcp", _host.IsListening, WireifyBuild.Describe());
             }
 
             if (started)
             {
                 StateChanged?.Invoke(WireifyConnectionState.ServerListening);
-                Log("[wireify]", $"MCP server listening on {info.Url}", true);
+                // The build identity leads the line: after a zip swap this is the ten-second
+                // proof of which build actually loaded (the round-17 stale-install lesson).
+                Log("[wireify]", $"Wireify {info.Build} — MCP server listening on {info.Url}", true);
+                foreach (var warning in InstallLocations.Warnings(
+                    typeof(WireifyController).Assembly.Location, InstallLocations.ExistingRoots()))
+                    Log("[wireify]", warning, false);
+                foreach (var warning in DuplicateAssemblyWarnings())
+                    Log("[wireify]", warning, false);
             }
             return info;
         }
@@ -142,10 +182,20 @@ namespace WireifyCore.Hosting
                     _launcher);
                 var result = connector.Connect(path!, host, OnConnectStep);
 
-                if (result.TerminalLaunched)
+                // Register (or refresh) this definition's session: the document binding routes
+                // its tool calls, the per-session state drives ITS sockets only. Registered even
+                // when the terminal spawn failed — a manually opened terminal in the home still
+                // authenticates with the session header and routes correctly.
+                if (!string.IsNullOrEmpty(result.HomeDir))
                 {
-                    TrackTerminal(result.Terminal);
-                    MarkLaunched();
+                    var homeId = Path.GetFileName(result.HomeDir);
+                    _sessions.Register(homeId, path!, FindOpenDocumentId(path!), result.Terminal, result.TerminalLaunched);
+                    if (result.Terminal is { } handle)
+                    {
+                        handle.Exited += () => OnSessionTerminalExited(handle);
+                        if (handle.HasExited) OnSessionTerminalExited(handle); // died before the subscription
+                    }
+                    StateChanged?.Invoke(State);
                 }
 
                 var success = result.Steps.All(s => s.Ok);
@@ -159,8 +209,7 @@ namespace WireifyCore.Hosting
             catch (Exception ex)
             {
                 var step = new WireifyConnectStep("[wireify]", $"connect failed: {ex.Message}", false, "error");
-                ConnectStepCompleted?.Invoke(step);
-                Log(step.Scope, step.Message, false);
+                RaiseConnectStep(step);
                 return new WireifyConnectReport(false, ServerInfo.Port, "", "", false, false,
                     new[] { step }, $"Unexpected failure — see the Wireify log. {ex.Message}");
             }
@@ -197,13 +246,66 @@ namespace WireifyCore.Hosting
         static GH_Document? ActiveDocument() => Instances.ActiveCanvas?.Document;
 
         void OnConnectStep(Connect.ConnectStep s)
+            => RaiseConnectStep(new WireifyConnectStep(s.Scope, s.Message, s.Ok, s.Kind));
+
+        /// <summary>Every connect step goes to the panel event, the session log, AND Rhino's
+        /// command line — the console is where users actually look, and an adoption failure that
+        /// only ever landed in connect-*.log cost two test rounds before anyone saw it.</summary>
+        void RaiseConnectStep(WireifyConnectStep step)
         {
-            var step = new WireifyConnectStep(s.Scope, s.Message, s.Ok, s.Kind);
             ConnectStepCompleted?.Invoke(step);
-            Log(s.Scope, s.Message, s.Ok);
+            Log(step.Scope, step.Message, step.Ok);
+            try { Rhino.RhinoApp.WriteLine($"{step.Scope} {(step.Ok ? "ok " : "ERR")} {step.Message}"); }
+            catch { /* echo is best-effort (headless hosts have no console) */ }
         }
 
         void OnToolActivity(Guid id, bool active) => ComponentActivityChanged?.Invoke(id, active);
+
+        /// <summary>The session-log writer's health line: panel buffer + console, never the
+        /// session file itself (that is the component being reported about).</summary>
+        void SessionLogNotice(string message, bool ok)
+        {
+            var line = new WireifyLogLine(DateTime.Now, "[wireify]", message, ok);
+            lock (_gate)
+            {
+                _log.Add(line);
+                if (_log.Count > MaxLogLines) _log.RemoveRange(0, _log.Count - MaxLogLines);
+            }
+            LogEmitted?.Invoke(line);
+            try { Rhino.RhinoApp.WriteLine($"[wireify] {(ok ? "ok " : "ERR")} {message}"); }
+            catch { /* echo is best-effort (headless hosts have no console) */ }
+        }
+
+        /// <summary>More than one loaded copy of a Wireify assembly means two installs are live
+        /// (the path-level check above can miss a copy that loaded before us). In that state
+        /// exception-type identity breaks across contexts and every tool failure surfaces as the
+        /// MCP SDK's generic mask instead of the named error — one line here is the ten-second
+        /// diagnosis for an otherwise invisible failure mode.</summary>
+        static IEnumerable<string> DuplicateAssemblyWarnings()
+        {
+            var warnings = new List<string>();
+            try
+            {
+                var groups = AppDomain.CurrentDomain.GetAssemblies()
+                    .Where(a => a.GetName().Name?.StartsWith("Wireify", StringComparison.OrdinalIgnoreCase) == true)
+                    .GroupBy(a => a.GetName().Name!, StringComparer.OrdinalIgnoreCase);
+                foreach (var group in groups)
+                {
+                    if (group.Count() < 2) continue;
+                    var locations = group
+                        .Select(a => { try { return a.Location; } catch { return ""; } })
+                        .Where(l => !string.IsNullOrEmpty(l))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    warnings.Add($"{group.Key} is loaded {group.Count()} times"
+                        + (locations.Count > 0 ? $" ({string.Join(" | ", locations)})" : "")
+                        + " — two Wireify installs are live; tool errors can lose their detail in this state. "
+                        + "Remove the extra install (see the dual-install row in the README troubleshooting).");
+                }
+            }
+            catch { /* diagnostics only */ }
+            return warnings;
+        }
 
         void Log(string scope, string message, bool ok)
         {
@@ -213,73 +315,62 @@ namespace WireifyCore.Hosting
                 _log.Add(line);
                 if (_log.Count > MaxLogLines) _log.RemoveRange(0, _log.Count - MaxLogLines);
             }
+            _sessionLog.Append(line); // panel buffer dies with Rhino; the file survives for post-mortems
             LogEmitted?.Invoke(line);
         }
 
-        void OnAuthenticatedRequest()
+        void OnAuthenticatedRequest(string? session)
         {
-            bool first;
-            lock (_gate)
+            if (session is null)
             {
-                first = !_sawAuth;
-                _sawAuth = true;
-                if (first) _state = WireifyConnectionState.Connected;
+                // No session header: a hand-run/debug client (every Wireify-spawned terminal
+                // carries the header via its home's .mcp.json). Active-document routing, logged once.
+                bool logIt;
+                lock (_gate) { logIt = !_loggedLegacyAuth; _loggedLegacyAuth = true; }
+                if (logIt)
+                    Log("[wireify]", "authenticated request without a session header (legacy or debug client) — active-document routing", true);
+                return;
             }
-            if (first)
-            {
-                StateChanged?.Invoke(WireifyConnectionState.Connected);
-                Log("[wireify]", "first authenticated request — Claude connected", true);
-            }
+            var file = _sessions.MarkAuthenticated(session);
+            if (file is null) return; // already connected, or a session this server never registered
+            StateChanged?.Invoke(State);
+            Log("[wireify]", $"Claude connected ({file})", true);
         }
 
-        void MarkLaunched()
+        /// <summary>A session's terminal closed: demote THAT session to ServerListening so ITS
+        /// definition's sockets read Connect again and its auth transition re-arms — other
+        /// definitions' sessions are untouched. A superseded handle (the session re-Connected)
+        /// is ignored.</summary>
+        void OnSessionTerminalExited(ITerminalHandle handle)
         {
-            bool raise;
-            lock (_gate)
-            {
-                raise = _state == WireifyConnectionState.ServerListening;
-                if (raise) _state = WireifyConnectionState.TerminalLaunched;
-            }
-            if (raise) StateChanged?.Invoke(WireifyConnectionState.TerminalLaunched);
+            var file = _sessions.HandleExit(handle);
+            if (file is null) return;
+            StateChanged?.Invoke(State);
+            Log("[wireify]", $"Claude terminal closed ({file}) — Connect (or right-click a socket) launches a new one", true);
         }
 
-        void TrackTerminal(ITerminalHandle? handle)
+        /// <summary>The open document whose file path matches — its id makes the session binding
+        /// survive a mid-session SaveAs (the path alone would go stale until the next Connect).</summary>
+        Guid FindOpenDocumentId(string ghFilePath) => _ui.Invoke(() =>
         {
-            lock (_gate) _terminal = handle;
-            if (handle is null) return; // untrackable platform — state keeps its old lifetime rules
-            handle.Exited += () => OnTerminalExited(handle);
-            if (handle.HasExited) OnTerminalExited(handle); // died before the subscription
-        }
-
-        /// <summary>The spawned terminal closed: demote to ServerListening so the socket button and
-        /// panel read Connect again, and re-arm the first-authenticated-request transition so the
-        /// next terminal can flip the session back to Connected.</summary>
-        void OnTerminalExited(ITerminalHandle handle)
-        {
-            bool demoted;
-            lock (_gate)
+            var server = Instances.DocumentServer;
+            if (server is null) return Guid.Empty;
+            foreach (var entry in (System.Collections.IEnumerable)server)
             {
-                if (!ReferenceEquals(_terminal, handle)) return; // an older launch — a newer one owns the state
-                _terminal = null;
-                demoted = _state >= WireifyConnectionState.TerminalLaunched;
-                if (demoted)
-                {
-                    _state = WireifyConnectionState.ServerListening;
-                    _sawAuth = false;
-                }
+                if (entry is not GH_Document doc || string.IsNullOrEmpty(doc.FilePath)) continue;
+                if (string.Equals(
+                        Path.GetFullPath(doc.FilePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        Path.GetFullPath(ghFilePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        StringComparison.OrdinalIgnoreCase))
+                    return doc.DocumentID;
             }
-            if (demoted)
-            {
-                StateChanged?.Invoke(WireifyConnectionState.ServerListening);
-                Log("[wireify]", "Claude terminal closed — Connect (or right-click a socket) launches a new one", true);
-            }
-        }
+            return Guid.Empty;
+        });
 
         WireifyConnectReport Refuse(int port, string reason, string hint)
         {
             var step = new WireifyConnectStep("[wireify]", reason, false, "refused");
-            ConnectStepCompleted?.Invoke(step);
-            Log(step.Scope, step.Message, false);
+            RaiseConnectStep(step);
             return new WireifyConnectReport(false, port, "", "", false, false, new[] { step }, hint);
         }
 

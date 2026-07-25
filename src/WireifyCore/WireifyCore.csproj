@@ -10,6 +10,15 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>WireifyCore</AssemblyName>
     <RootNamespace>WireifyCore</RootNamespace>
+    <!-- The product version every surface reports (panel line, MCP serverInfo, get_runtime_info).
+         Bump with manifest.yml — WireifyBuild.Describe() is how a live install proves which build
+         is actually loaded after a zip swap. The stamp is baked at COMPILE time into the
+         informational version: file times are rewritten by Unblock-File / copies (live-observed),
+         so they cannot be the build's identity. Costs one WireifyCore recompile per build. -->
+    <Version>0.2.0</Version>
+    <InformationalVersion>0.2.0+build.$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd-HHmm'))</InformationalVersion>
+    <!-- Keep the stamp clean: the SDK otherwise appends ".<git-sha>" to the metadata. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <NoWarn>NU1701</NoWarn>
     <!-- ModelContextProtocol.Core pulls the .NET-10 out-of-band polyfills (System.Text.Json,
          System.Net.ServerSentEvents, ...). They restore + run on net7.0 (Rhino 8's runtime) and

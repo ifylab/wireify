@@ -60,8 +60,39 @@ namespace WireifyGh
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
-            // Deliberately empty: the socket computes nothing, but its params collect VolatileData,
-            // so read_input_data works before any code exists.
+            // The socket computes nothing (its params collect VolatileData, so read_input_data
+            // works before any code exists) — but staging is the one moment Wireify can warn the
+            // USER about clipped text, so scan a bounded prefix of each wired input for it.
+            WarnOnClippedText();
+        }
+
+        /// <summary>Orange-balloon warning when a staged input carries text at exactly the panel
+        /// paste-clip length — the full content never reached the wire, and downstream that only
+        /// surfaces as a parse error deep inside the truncated data. Bounded scan: string items
+        /// only, first few per branch.</summary>
+        void WarnOnClippedText()
+        {
+            const int maxItemsPerBranch = 8;
+            foreach (var param in Params.Input)
+            {
+                if (param.SourceCount == 0) continue;
+                var clipped = 0;
+                foreach (var path in param.VolatileData.Paths)
+                {
+                    var seen = 0;
+                    foreach (var item in param.VolatileData.get_Branch(path))
+                    {
+                        if (seen++ >= maxItemsPerBranch) break;
+                        if (item is Grasshopper.Kernel.Types.GH_String text
+                            && text.Value is { } value
+                            && value.Length == WireifyIds.PanelClipTextLength)
+                            clipped++;
+                    }
+                }
+                if (clipped > 0)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                        WireifyIds.ClipTextWarning(param.NickName ?? param.Name ?? "input", clipped));
+            }
         }
 
         // --- numbering -------------------------------------------------------------------------
@@ -120,7 +151,9 @@ namespace WireifyGh
             {
                 if (WireifyGhRuntime.IsActive(InstanceGuid)) return "Working";
                 // Short enough to never clip in the capsule (live round: "Ready - do #1" truncated).
-                return WireifyGhRuntime.State >= WireifyConnectionState.TerminalLaunched
+                // Per-document: THIS definition's session decides — a fresh second file honestly
+                // reads Connect instead of inheriting another file's live terminal.
+                return WireifyGhRuntime.StateFor(OnPingDocument()?.FilePath) >= WireifyConnectionState.TerminalLaunched
                     ? $"do #{_number}"
                     : "Connect";
             }
@@ -128,7 +161,7 @@ namespace WireifyGh
 
         internal void OnButtonClick()
         {
-            if (WireifyGhRuntime.State >= WireifyConnectionState.TerminalLaunched)
+            if (WireifyGhRuntime.StateFor(OnPingDocument()?.FilePath) >= WireifyConnectionState.TerminalLaunched)
             {
                 TryOpenPanel();
                 return;

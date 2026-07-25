@@ -20,15 +20,17 @@ namespace WireifyCore.Connect
     {
         /// <summary>Launch <c>claude</c> in <paramref name="homeDir"/>; <paramref name="model"/> and
         /// <paramref name="effort"/> (already validated by the caller) become <c>--model</c> /
-        /// <c>--effort</c> flags. Returns a liveness handle, or null when the platform cannot track
-        /// the window.</summary>
-        ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null);
+        /// <c>--effort</c> flags. <paramref name="title"/> names the terminal window (the
+        /// definition's file name — with several definitions open, two Claude windows must be
+        /// tellable apart); best-effort, sanitized before shelling. Returns a liveness handle, or
+        /// null when the platform cannot track the window.</summary>
+        ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null, string? title = null);
     }
 
     /// <summary>No-op launcher — for tests, or when the caller drives the terminal itself.</summary>
     public sealed class NullTerminalLauncher : ITerminalLauncher
     {
-        public ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null) => null;
+        public ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null, string? title = null) => null;
     }
 
     /// <summary>
@@ -54,15 +56,33 @@ namespace WireifyCore.Connect
             return command;
         }
 
-        public ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null)
+        /// <summary>The window title, reduced to characters that are inert on a cmd line (no
+        /// quotes, carets, pipes, ampersands, redirects), bounded. Empty when nothing survives.</summary>
+        public static string SanitizeTitle(string title)
+        {
+            var sb = new System.Text.StringBuilder(Math.Min(title.Length, 64));
+            foreach (var c in title)
+            {
+                if (sb.Length == 64) break;
+                if (char.IsLetterOrDigit(c) || c is ' ' or '-' or '_' or '.' or '(' or ')' or '#')
+                    sb.Append(c);
+            }
+            return sb.ToString().Trim();
+        }
+
+        public ITerminalHandle? Launch(string homeDir, string? model = null, string? effort = null, string? title = null)
         {
             var command = ClaudeCommand(model, effort);
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
+                // "title <name> && claude ..." — with several definitions open, each spawned
+                // window names its file; sanitized to inert characters, skipped when empty.
+                var safeTitle = title is null ? "" : SanitizeTitle(title);
+                var prefix = safeTitle.Length > 0 ? $"title {safeTitle} && " : "";
                 var process = Process.Start(new ProcessStartInfo
                 {
                     FileName = "cmd.exe",
-                    Arguments = $"/k {command}",
+                    Arguments = $"/k {prefix}{command}",
                     WorkingDirectory = homeDir,
                     UseShellExecute = true,
                 });

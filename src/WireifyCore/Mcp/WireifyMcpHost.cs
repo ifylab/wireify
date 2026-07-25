@@ -34,9 +34,11 @@ namespace WireifyCore.Mcp
         public string Secret => _secret;
         public bool IsListening => _listener?.IsListening == true;
 
-        /// <summary>Raised on every request that passes the shared-secret check — the first one is
-        /// the definitive "Claude connected" signal the panel/socket flip green on.</summary>
-        public event Action? AuthenticatedRequest;
+        /// <summary>Raised on every request that passes the shared-secret check, carrying the
+        /// caller's <c>X-Wireify-Home</c> session header (null when absent — a legacy/debug
+        /// client). The first one per session is the "Claude connected" signal that flips that
+        /// definition's socket/panel state green.</summary>
+        public event Action<string?>? AuthenticatedRequest;
 
         public WireifyMcpHost(WireifyTools tools, string secret)
         {
@@ -94,7 +96,14 @@ namespace WireifyCore.Mcp
                     return;
                 }
 
-                try { AuthenticatedRequest?.Invoke(); } catch { /* status listeners never break serving */ }
+                // The caller's session (which home's .mcp.json this client was configured from) —
+                // set on the async context BEFORE the server task starts, so it flows into the
+                // tool invocation and the bridge routes to that session's document.
+                var home = ctx.Request.Headers["X-Wireify-Home"];
+                var session = string.IsNullOrEmpty(home) ? null : home;
+                WireifyCore.Bridge.WireifySessionContext.CurrentHomeId = session;
+
+                try { AuthenticatedRequest?.Invoke(session); } catch { /* status listeners never break serving */ }
 
                 using var reqCts = new CancellationTokenSource();
 
@@ -119,7 +128,7 @@ namespace WireifyCore.Mcp
                 await using var transport = new StreamableHttpServerTransport { Stateless = true };
                 await using var server = McpServer.Create(transport, new McpServerOptions
                 {
-                    ServerInfo = new Implementation { Name = "wireify", Version = "0.1.0" },
+                    ServerInfo = new Implementation { Name = "wireify", Version = WireifyBuild.Version },
                     ToolCollection = _tools,
                     TaskStore = _taskStore,
                     ScopeRequests = false,

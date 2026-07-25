@@ -56,12 +56,61 @@ namespace WireifyCore.Connect
             Step(new ConnectStep("[wireify]", $"server listening on 127.0.0.1:{port}", host.IsListening, "server"));
 
             var homeDir = _paths.HomeFor(ghFilePath);
-            _scaffolder.ScaffoldHome(homeDir, new HomeScaffolder.Substitutions(port, secret, FileLabel(ghFilePath)));
+
+            // Identity, part 1 — adoption: a renamed or moved .gh whose old home sits orphaned
+            // reconnects to its accumulated memory (COPIED onto the new id BEFORE the scaffold, so
+            // the managed refresh lands on the adopted files; the original is marked and ages out
+            // via the sweep). Copies-of-files and ambiguity scaffold fresh, with the unresolved
+            // candidates handed to the session below; a failure never fails the Connect.
+            var adoption = HomeIdentity.AdoptionOutcome.Nothing;
+            try
+            {
+                adoption = HomeIdentity.TryAdopt(_paths, ghFilePath, homeDir);
+                if (adoption.Note is not null)
+                    Step(new ConnectStep("[wireify]", adoption.Note, adoption.Ok, "home"));
+            }
+            catch (Exception ex)
+            {
+                Step(new ConnectStep("[wireify]", $"memory adoption failed ({ex.Message}) — scaffolding fresh", false, "home"));
+            }
+
+            var scaffold = _scaffolder.ScaffoldHome(
+                homeDir, new HomeScaffolder.Substitutions(port, secret, FileLabel(ghFilePath)), _paths.SharedSkillsDir);
             _scaffolder.SeedSharedDefaults(_paths.SharedDefaults);
+            _scaffolder.MergeSharedDefaults(_paths.SharedDefaults);
             Step(new ConnectStep("[wireify]", $"home scaffolded at {homeDir}", true, "home"));
+            if (scaffold.MemoryNote is not null)
+                Step(new ConnectStep("[wireify]", scaffold.MemoryNote, scaffold.MemoryNoteOk, "home"));
+            if (scaffold.MemoryStatus is not null)
+                Step(new ConnectStep("[wireify]", scaffold.MemoryStatus, true, "home"));
+
+            // Identity, part 2 — record + sweep: overwrite this home's home.json for the file just
+            // connected, then age the OTHER homes (gone .gh -> orphan stamp -> archive/ at 90 days,
+            // never delete; a restored .gh clears its stamp), then regenerate the read-only
+            // homes.md index from the post-sweep records. One log line only when something
+            // changed; never fails a Connect.
+            if (!string.IsNullOrWhiteSpace(ghFilePath))
+            {
+                try
+                {
+                    HomeIdentity.Write(homeDir, ghFilePath);
+                    // A refusal's unresolved orphans persist into the home (an empty list clears
+                    // any stale file) — the loop skill offers a user-confirmed recovery from it.
+                    HomeIdentity.WriteAdoptionCandidates(homeDir, adoption.Unresolved);
+                    if (HomeIdentity.Sweep(_paths, homeDir, DateTime.UtcNow) is { } sweepNote)
+                        Step(new ConnectStep("[wireify]", sweepNote, true, "home"));
+                    HomeIdentity.WriteHomesIndex(_paths, DateTime.UtcNow);
+                }
+                catch (Exception ex)
+                {
+                    Step(new ConnectStep("[wireify]", $"home identity pass failed ({ex.Message}) — session unaffected", false, "home"));
+                }
+            }
 
             var mcpPath = Path.Combine(homeDir, ".mcp.json");
-            ConfigMerger.MergeProjectMcpJson(mcpPath, port, secret);
+            // The home id rides as the session header: the server routes this client's calls to
+            // the definition it was Connected for, active canvas or not.
+            ConfigMerger.MergeProjectMcpJson(mcpPath, port, secret, Path.GetFileName(homeDir));
             Step(new ConnectStep("[wireify]", $"MCP config merged into {mcpPath}", true, "config"));
 
             // Without this, the first session ignores the scaffolded allowlist ("workspace has not
@@ -93,7 +142,7 @@ namespace WireifyCore.Connect
             var effort = ReadHomeEffort(homeDir);
             try
             {
-                terminal = _launcher.Launch(homeDir, model, effort);
+                terminal = _launcher.Launch(homeDir, model, effort, "Wireify - " + FileLabel(ghFilePath));
                 launched = true;
                 Step(new ConnectStep("[wireify]",
                     $"terminal launched in home dir (model: {model ?? "user default"}, effort: {effort ?? "user default"})",

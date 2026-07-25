@@ -17,16 +17,22 @@ namespace WireifyCore.Connect
     {
         public const string ServerName = "wireify";
 
-        /// <summary>The server entry shape (matches home-template/mcp.json.tmpl).</summary>
-        public static JsonObject BuildServerEntry(int port, string secret)
+        /// <summary>The server entry shape (matches home-template/mcp.json.tmpl). The optional
+        /// <paramref name="homeId"/> rides as the <c>X-Wireify-Home</c> header — the session's
+        /// identity, which the server uses to route this client's calls to the document it was
+        /// Connected for (the secret stays the only credential). The whole entry is replaced on
+        /// every Connect, so existing homes pick the header up with zero migration.</summary>
+        public static JsonObject BuildServerEntry(int port, string secret, string? homeId = null)
         {
             if (port < 1 || port > 65535) throw new ArgumentOutOfRangeException(nameof(port));
             if (string.IsNullOrEmpty(secret)) throw new ArgumentException("secret required", nameof(secret));
+            var headers = new JsonObject { ["X-Wireify-Secret"] = secret };
+            if (!string.IsNullOrEmpty(homeId)) headers["X-Wireify-Home"] = homeId;
             return new JsonObject
             {
                 ["type"] = "http",
                 ["url"] = $"http://127.0.0.1:{port}/mcp",
-                ["headers"] = new JsonObject { ["X-Wireify-Secret"] = secret },
+                ["headers"] = headers,
             };
         }
 
@@ -34,11 +40,11 @@ namespace WireifyCore.Connect
         /// Merge the wireify server into a project-local <c>.mcp.json</c> (the preferred scope —
         /// it lives in the per-.gh home dir). Creates the file if missing.
         /// </summary>
-        public static void MergeProjectMcpJson(string mcpJsonPath, int port, string secret)
+        public static void MergeProjectMcpJson(string mcpJsonPath, int port, string secret, string? homeId = null)
         {
             var root = ReadRootObject(mcpJsonPath);
             var servers = GetOrAddObject(root, "mcpServers");
-            servers[ServerName] = BuildServerEntry(port, secret);
+            servers[ServerName] = BuildServerEntry(port, secret, homeId);
             WriteRootObject(mcpJsonPath, root);
         }
 

@@ -40,6 +40,7 @@ public class UiInvokerTests
 
         var ex = Assert.Throws<TimeoutException>(() => invoker.Invoke(() => { ran = true; return 1; }));
         Assert.Contains("NOT executed", ex.Message);
+        Assert.Contains("WIREIFY_BUSY", ex.Message); // the stable code the loop skill keys on
 
         parked!(); // the UI thread finally gets to it — abandoned, must no-op
         Assert.False(ran);

@@ -38,6 +38,10 @@ namespace WireifyGh
 
         public static WireifyConnectionState State => Controller.State;
 
+        /// <summary>The state of THIS definition's session — sockets render per-document, so a
+        /// second open file never shows "do #n" off another file's terminal.</summary>
+        public static WireifyConnectionState StateFor(string? ghFilePath) => Controller.StateFor(ghFilePath);
+
         public static bool IsActive(Guid componentId)
         {
             lock (Gate) return Active.Contains(componentId);

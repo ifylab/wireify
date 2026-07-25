@@ -7,7 +7,8 @@ This directory is a Wireify home for the Grasshopper definition **{{GH_FILE}}**.
 
 - **`wireify-loop`** is the entry skill — it drives the live introspect -> typed-Python -> run -> fix loop and the tool order. Use it for any Grasshopper Python work.
 - The user stages tasks on **numbered Wireify sockets** ("do #3: ..."): resolve the number through `get_document_summary`'s `wireify` block, write the script with the staged input names, and `convert_staged` — details in `wireify-loop`.
-- Deep Rhino/GH API and code patterns: **`scripting-reference`**. GH dev workflow + validation discipline: **`rhino-grasshopper-dev`**. Porting IronPython 2 -> CPython 3: **`wireify-port`**. Structural/AEC engineering semantics: **`aec-structural`** (when the numbers are engineering quantities).
+- Deep Rhino/GH API and code patterns: **`scripting-reference`**. GH dev workflow + validation discipline: **`rhino-grasshopper-dev`**. Porting IronPython 2 -> CPython 3: **`wireify-port`**. Consolidating this definition's lesson ledger ("clean up memory", "what keeps going wrong here"): **`wireify-retro`**. Structural/AEC engineering semantics: **`aec-structural`** (when the numbers are engineering quantities).
+- Dev mode -- feedback logging for people testing Wireify itself: **`wireify-dev`**, ONLY when the user explicitly turns it on ("dev mode on") or drives it ("log: ...", "dev mode wrap"). Off by default; never load it otherwise.
 
 ## Answering questions
 
@@ -18,10 +19,19 @@ This directory is a Wireify home for the Grasshopper definition **{{GH_FILE}}**.
 - Standing preferences (units, tolerance, libraries, code style, AEC conventions) live in the shared **`~/.ify/wireify/defaults.md`** — honour them; confirm anything ambiguous rather than assuming.
 - Default runtime is **CPython 3** (`#! python 3` auto-prepended; `# r:` for pip deps). Use IronPython 2 only when the target requires it, and never mix the two runtimes' idioms.
 - Preserve Grasshopper data-tree structure unless explicitly restructuring. Validate at boundaries; surface failures as runtime messages, never silently.
+- Large text payloads (a big JSON/CSV) do not travel on canvas wires — GH panels clip pasted text, and a reported value length of exactly 32767 means the data was truncated upstream. Wire a file path instead and `open()` it in-script (`wireify-loop` > Big payloads).
+- The canvas is the user's live document: never create components as diagnostics, and ask before any mutation the user did not request (`wireify-loop` > Canvas etiquette).
+- This session is bound to **{{GH_FILE}}**, even with several files open in one Rhino. Reads keep working while its tab is in the background; only mutations need it to be the front canvas. On `WIREIFY_DOC_NOT_ACTIVE`, keep investigating freely and ask the user to switch tabs only when you are ready to change something.
+
+The shared defaults are imported below — already in your context; treat them as standing instructions:
+
+@~/.ify/wireify/defaults.md
 
 ## Memory
 
-This definition's lesson ledger is `MEMORY.md` in this directory, imported below — its contents are already in your context every session. It is a separate file from Claude Code's own auto-memory (which stays empty here); answer "what do you remember" questions from the ledger, not from the auto-memory. Record what failed and what fixed it as you go — append lessons to `MEMORY.md`, so the definition gets smarter each session.
+This definition's lesson ledger is `MEMORY.md` in this directory, imported below — its contents are already in your context every session. It is a separate file from Claude Code's own auto-memory (which stays empty here); answer "what do you remember" questions from the ledger, not from the auto-memory. Record what failed and what fixed it as you go — append lessons to `MEMORY.md` as dated entries in the format defined at the top of the ledger, so the definition gets smarter each session. Promotion test — would the lesson hold in a brand-new `.gh` file? If yes, append ONE line to the `## Promoted lessons` section of `~/.ify/wireify/defaults.md` suffixed `(from <this home's folder name>, YYYY-MM-DD)` and keep only the definition-specific residue in `MEMORY.md`; if no, it stays here. A reusable multi-step procedure becomes a skill instead: a folder in this home's `.claude/skills/` (it survives Connects), or propose `~/.ify/wireify/skills/` to share it across every definition.
+
+{{MEM_DIRECTIVE}}
 
 @MEMORY.md
 

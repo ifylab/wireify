@@ -82,6 +82,54 @@ public class WireifyMcpHostTests
     }
 
     [Fact]
+    public async Task Authenticated_request_carries_the_session_header()
+    {
+        using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), Secret);
+        var sessions = new List<string?>();
+        host.AuthenticatedRequest += s => { lock (sessions) sessions.Add(s); };
+        var port = host.Start(53250);
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        var req = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{port}/mcp");
+        req.Headers.TryAddWithoutValidation("X-Wireify-Secret", Secret);
+        req.Headers.TryAddWithoutValidation("X-Wireify-Home", "tower-a1b2c3d4");
+        req.Headers.TryAddWithoutValidation("Accept", "application/json, text/event-stream");
+        req.Content = new StringContent(
+            """{"jsonrpc":"2.0","id":9,"method":"tools/list"}""", Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.OK, (await http.SendAsync(req)).StatusCode);
+
+        var (status, _) = await Post(port, Secret, """{"jsonrpc":"2.0","id":10,"method":"tools/list"}""");
+        Assert.Equal(HttpStatusCode.OK, status);
+
+        lock (sessions)
+        {
+            Assert.Contains("tower-a1b2c3d4", sessions); // the session-tagged request
+            Assert.Contains(null, sessions);             // the headerless (legacy/debug) request
+        }
+    }
+
+    [Fact]
+    public async Task Tool_failure_surfaces_the_named_error_not_the_generic_mask()
+    {
+        // The whole error contract, end to end over real loopback: a bridge exception must reach
+        // the client named — "<tool> failed — <Type>: <message>". The SDK prefixes tool errors
+        // with "An error occurred invoking 'x': " even for McpException (its sanctioned shape);
+        // what must never appear is the BARE mask, period after the tool name and no detail —
+        // that is the shape of a non-McpException escaping Guard.
+        var bridge = new FakeBridge { GetSourceThrows = new InvalidOperationException("engine wedged") };
+        using var host = new WireifyMcpHost(new WireifyTools(bridge), Secret);
+        var port = host.Start(53300);
+
+        var (status, body) = await Post(port, Secret,
+            """{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_source","arguments":{"id":"11111111-1111-1111-1111-111111111111"}}}""");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains("get_source failed", body);
+        Assert.Contains("engine wedged", body);
+        Assert.DoesNotContain("An error occurred invoking 'get_source'.", body);
+    }
+
+    [Fact]
     public async Task Initialize_advertises_task_capability()
     {
         using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), Secret);

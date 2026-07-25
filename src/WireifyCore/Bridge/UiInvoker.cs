@@ -72,10 +72,7 @@ namespace WireifyCore.Bridge
             if (!started.Wait(_pickupTimeout))
             {
                 if (Interlocked.CompareExchange(ref state, Abandoned, Pending) == Pending)
-                    throw new TimeoutException(
-                        $"Rhino's UI thread did not pick this call up within {_pickupTimeout.TotalSeconds:0}s — " +
-                        "Rhino is busy or blocked (a long solve, a modal dialog, or a hung operation). " +
-                        "The call was NOT executed. Let Rhino go idle, then retry once.");
+                    throw new TimeoutException(ErrorProtocol.Busy(_pickupTimeout.TotalSeconds));
                 // The callback won the race and is running — fall through and wait it out.
             }
 

@@ -26,7 +26,7 @@ public class MarshallingBridgeTests
         bridge.Run(FakeBridge.SomeId);
 
         Assert.Equal(4, invoker.Calls);
-        Assert.Contains("GetDocumentSummary:False", fake.Calls);
+        Assert.Contains("GetDocumentSummary:False:300:-", fake.Calls);
         Assert.Contains($"Run:{FakeBridge.SomeId}", fake.Calls);
     }
 
@@ -36,6 +36,18 @@ public class MarshallingBridgeTests
         var bridge = new MarshallingBridge(new FakeBridge(), new InlineUiInvoker());
 
         Assert.Equal(FakeBridge.SomeId, bridge.CreatePythonComponent(PythonRuntime.CPython3));
+    }
+
+    [Fact]
+    public void Wire_passes_the_mode_through_and_returns_the_receipt()
+    {
+        var fake = new FakeBridge();
+        var bridge = new MarshallingBridge(fake, new InlineUiInvoker());
+
+        var result = bridge.Wire(FakeBridge.SomeId, 0, FakeBridge.SomeId, 1, WireMode.Add);
+
+        Assert.Contains($"Wire:{FakeBridge.SomeId}:0:{FakeBridge.SomeId}:1:Add", fake.Calls);
+        Assert.Equal("add", result.Mode);
     }
 
     sealed class SlowInvoker : IUiInvoker
@@ -82,6 +94,7 @@ public class MarshallingBridgeTests
 
         var ex = Assert.Throws<TimeoutException>(() => bridge.GetDocumentSummary());
         Assert.Contains("NOT started", ex.Message);
+        Assert.Contains("WIREIFY_QUEUE_TIMEOUT", ex.Message); // the stable code the loop skill keys on
         holder.Wait();
 
         lock (logs) Assert.Contains(logs, l => !l.Ok && l.Message.Contains("get_document_summary"));
@@ -96,5 +109,37 @@ public class MarshallingBridgeTests
         bridge.GetRuntimeInfo();
 
         Assert.Contains(logs, l => l.Ok && l.Message.StartsWith("get_runtime_info ok in"));
+    }
+
+    [Fact]
+    public void Entry_log_fires_before_the_body_so_a_dead_call_still_leaves_a_trace()
+    {
+        var entries = new List<string>();
+        var fake = new FakeBridge { SetIoThrows = new InvalidOperationException("boom") };
+        var bridge = new MarshallingBridge(fake, new InlineUiInvoker(), entryLog: entries.Add);
+
+        bridge.GetRuntimeInfo();
+        Assert.Throws<InvalidOperationException>(() =>
+            bridge.SetIo(FakeBridge.SomeId, Array.Empty<IoParamSpec>(), Array.Empty<IoParamSpec>()));
+
+        // The failing call is on record by name — the outcome line alone cannot distinguish
+        // "never returned" from "returned and the client lost it".
+        Assert.Equal(new[] { "get_runtime_info", "set_io" }, entries);
+    }
+
+    [Fact]
+    public void Session_context_is_snapshotted_into_the_call_and_cleared_after()
+    {
+        var sink = new List<string?>();
+        var bridge = new MarshallingBridge(new FakeBridge(), new InlineUiInvoker(),
+            callContext: sink.Add);
+
+        WireifySessionContext.CurrentHomeId = "tower-a1b2c3d4";
+        try { bridge.GetRuntimeInfo(); }
+        finally { WireifySessionContext.CurrentHomeId = null; }
+        bridge.GetRuntimeInfo(); // no ambient session — the slot gets null for the call too
+
+        // set-before / clear-after per call: the resolver's slot never leaks across calls.
+        Assert.Equal(new string?[] { "tower-a1b2c3d4", null, null, null }, sink);
     }
 }

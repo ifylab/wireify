@@ -19,16 +19,20 @@ namespace WireifyContract
 
     public sealed class WireifyServerInfo
     {
-        public WireifyServerInfo(int port, string url, bool listening)
+        public WireifyServerInfo(int port, string url, bool listening, string build = "")
         {
             Port = port;
             Url = url ?? "";
             Listening = listening;
+            Build = build ?? "";
         }
 
         public int Port { get; }
         public string Url { get; }
         public bool Listening { get; }
+        /// <summary>The loaded build's identity ("0.2.0 build 2026-07-09 09:47") — printed at
+        /// startup and in the panel so a zip swap is provable at a glance.</summary>
+        public string Build { get; }
     }
 
     /// <summary>One step of the connect flow, scope-tagged (<c>[wireify]</c> vs <c>[claude]</c>)
