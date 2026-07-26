@@ -9,6 +9,8 @@
 
 Your own Claude Code, live in Grasshopper. One click connects a Claude terminal to your canvas: it reads the data actually flowing through your wires, writes typed Python components, runs them, reads Grasshopper's errors, and fixes them — while you watch.
 
+![A staged Wireify socket becomes a live terrain component: Claude reads the wired surface, asks how to treat a Panel-fed height input, builds the component in place, and reworks it through the user's corrections](assets/demo/surface-loop.gif)
+
 **Install:** in Rhino 8 on Windows, run `_PackageManager`, search **wireify**, install, restart Rhino. Check [Requirements](#requirements) first — Rhino 8 SR18 or newer, and Claude Code on a paid plan. Mac and Rhino 7 are planned. Building from source works too (below).
 
 ## How it works
@@ -28,6 +30,18 @@ Your own Claude Code, live in Grasshopper. One click connects a Claude terminal 
 6. Revise any time: `revise #1: also return the rejected points.` Converted components are edited in place.
 
 The converted component is a stock Rhino component. **Files you save have no Wireify dependency** — colleagues without the plugin open them like any other definition. Only unconverted sockets (a transient authoring state) need Wireify present.
+
+## See it work
+
+On an existing definition: the socket's inputs come off a native chain of components. Claude traces what feeds them, asks two engineering questions (course height, what "random orientation" should mean for a wall that must stand), then builds the stacking component — every brick oriented, one branch per row:
+
+![A staged socket on an existing definition becomes a brick-stacking component — Claude traces the upstream chain, asks two engineering decisions, and orients every brick](assets/demo/brick-orientation.gif)
+
+| The user stays in the loop | Real engineering questions |
+|---|---|
+| ![Claude asks how to treat a Panel-fed height input before writing any code](assets/demo/height-input-question.png) | ![Claude reports the traced upstream chain and the user's answers before building](assets/demo/brick-wall-session.png) |
+
+![A roof truss generated from a JSON panel through one converted component, with named chord, vertical, and diagonal outputs](assets/demo/truss-from-json.png)
 
 ## Requirements
 
