@@ -32,15 +32,23 @@ namespace WireifyCore.Connect
         readonly WireifyPaths _paths;
         readonly HomeScaffolder _scaffolder;
         readonly ITerminalLauncher _launcher;
+        readonly Func<PreflightResult> _preflight;
 
-        public WireifyConnector(WireifyPaths paths, HomeScaffolder scaffolder, ITerminalLauncher launcher)
+        /// <param name="preflight">The Claude CLI check; defaults to the real PATH scan. Injected
+        /// so the no-CLI path (no terminal launched) is testable on a machine that has one.</param>
+        public WireifyConnector(
+            WireifyPaths paths, HomeScaffolder scaffolder, ITerminalLauncher launcher,
+            Func<PreflightResult>? preflight = null)
         {
             _paths = paths ?? throw new ArgumentNullException(nameof(paths));
             _scaffolder = scaffolder ?? throw new ArgumentNullException(nameof(scaffolder));
             _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
+            _preflight = preflight ?? (() => Preflight.CheckClaude());
         }
 
-        public ConnectResult Connect(string ghFilePath, WireifyMcpHost host, Action<ConnectStep>? onStep = null)
+        public ConnectResult Connect(
+            string ghFilePath, WireifyMcpHost host, Action<ConnectStep>? onStep = null,
+            Func<string, IReadOnlyList<string>>? appLines = null)
         {
             if (host is null) throw new ArgumentNullException(nameof(host));
 
@@ -126,7 +134,7 @@ namespace WireifyCore.Connect
                 Step(new ConnectStep("[wireify]", $"could not pre-trust the home ({ex.Message}) — Claude will show its trust dialog once", false, "trust"));
             }
 
-            var preflight = Preflight.CheckClaude();
+            var preflight = _preflight();
             Step(new ConnectStep(
                 preflight.ClaudeFound ? "[wireify]" : "[claude]",
                 preflight.ClaudeFound ? $"claude found at {preflight.ClaudePath}" : preflight.Note ?? "claude not found",
@@ -140,17 +148,45 @@ namespace WireifyCore.Connect
             // wireify.json; deleting a key hands that choice back to the user's own Claude default.
             var model = ReadHomeModel(homeDir);
             var effort = ReadHomeEffort(homeDir);
-            try
+            if (!preflight.ClaudeFound)
             {
-                terminal = _launcher.Launch(homeDir, model, effort, "Wireify - " + FileLabel(ghFilePath));
-                launched = true;
+                // No CLI, no terminal: the window it opened read "'claude' is not recognized"
+                // and idled at a prompt while the panel called the terminal step ok (round-11
+                // S11.31/S11.32). The failed step names the way back.
                 Step(new ConnectStep("[wireify]",
-                    $"terminal launched in home dir (model: {model ?? "user default"}, effort: {effort ?? "user default"})",
-                    true, "terminal"));
+                    "terminal not launched — Claude Code CLI not found (install it, restart Rhino, then Build again)",
+                    false, "terminal"));
             }
-            catch (Exception ex)
+            else
             {
-                Step(new ConnectStep("[wireify]", $"terminal launch failed: {ex.Message}", false, "terminal"));
+                try
+                {
+                    terminal = _launcher.Launch(homeDir, model, effort, "Wireify - " + FileLabel(ghFilePath));
+                    launched = true;
+                    Step(new ConnectStep("[wireify]",
+                        $"terminal launched in home dir (model: {model ?? "user default"}, effort: {effort ?? "user default"})",
+                        true, "terminal"));
+                }
+                catch (Exception ex)
+                {
+                    Step(new ConnectStep("[wireify]", $"terminal launch failed: {ex.Message}", false, "terminal"));
+                }
+            }
+
+            // App lines LAST and through the step list: they reach the console via onStep and
+            // land in the connect log below — the round-4 "every home" fix printed after the
+            // log was written, so connect-*.log always ended at "terminal launched" (S5.0e).
+            if (appLines is not null)
+            {
+                try
+                {
+                    foreach (var line in appLines(homeDir))
+                        Step(new ConnectStep("[wireify]", line, true, "info"));
+                }
+                catch (Exception ex)
+                {
+                    Step(new ConnectStep("[wireify]", $"app link lookup failed ({ex.Message}) — use get_app_info from the session", false, "info"));
+                }
             }
 
             TryWriteLog(steps);

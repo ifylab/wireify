@@ -102,6 +102,26 @@ public class HintSelectionTests
     }
 
     [Fact]
+    public void Resolve_aliases_float_and_double_both_ways_when_the_exact_token_is_absent()
+    {
+        // Round-5 S5.6f: outputs accept "double", introspection echoes "float", and the output
+        // registry offers no "float" — so an echoed hint fed back failed on its own data. The
+        // two are one alias pair, resolved only when the exact token misses.
+        var outputsRegistry = new[] { "No Type Hint", "bool", "int", "string", "double" };
+        Assert.Equal("double", HintSelection.Resolve("float", outputsRegistry));
+
+        var floatOnlyRegistry = new[] { "No Type Hint", "float" };
+        Assert.Equal("float", HintSelection.Resolve("double", floatOnlyRegistry));
+
+        // An exact match always wins over the alias.
+        var both = new[] { "float", "double" };
+        Assert.Equal("float", HintSelection.Resolve("float", both));
+
+        // The alias never invents availability.
+        Assert.Null(HintSelection.Resolve("float", new[] { "bool", "int" }));
+    }
+
+    [Fact]
     public void Mixed_tree_warning_names_the_param_the_types_and_both_ways_out()
     {
         var warning = HintSelection.MixedTreeWarning(

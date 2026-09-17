@@ -86,6 +86,43 @@ public class StagedConversionTests
             new[] { new IoParamSpec("a") }).Error);
     }
 
+    // RenameTo (round-7 item 1): the staged/current name stays the match key, the final
+    // variable name is the rename — so a socket input left as in1 converts as lines with
+    // its wire intact, and validation judges collisions on what the canvas will carry.
+
+    [Fact]
+    public void ValidateIo_carries_a_rename_and_normalizes_a_noop_one_away()
+    {
+        var io = StagedConversion.ValidateIo(
+            new[] { "in1", "in2" },
+            new[]
+            {
+                new IoParamSpec("in1", "list", RenameTo: " lines "),
+                new IoParamSpec("in2", "item", RenameTo: "IN2"), // same name = no-op
+            },
+            new[] { new IoParamSpec("count") });
+
+        Assert.Null(io.Error);
+        Assert.Equal(("in1", "lines"), (io.Inputs[0].Name, io.Inputs[0].RenameTo));
+        Assert.Equal(("in2", null), (io.Inputs[1].Name, io.Inputs[1].RenameTo));
+    }
+
+    [Fact]
+    public void ValidateIo_judges_collisions_on_final_names()
+    {
+        var staged = new[] { "in1", "in2" };
+        var outN = new[] { new IoParamSpec("n") };
+
+        Assert.Contains("duplicate final input name", StagedConversion.ValidateIo(staged,
+            new[] { new IoParamSpec("in1", RenameTo: "lines"), new IoParamSpec("in2", RenameTo: "Lines") }, outN).Error);
+        Assert.Contains("both input and output", StagedConversion.ValidateIo(staged,
+            new[] { new IoParamSpec("in1", RenameTo: "n"), new IoParamSpec("in2") }, outN).Error);
+        Assert.Contains("empty renameTo", StagedConversion.ValidateIo(staged,
+            new[] { new IoParamSpec("in1", RenameTo: "  "), new IoParamSpec("in2") }, outN).Error);
+        Assert.Contains("renameTo is for inputs", StagedConversion.ValidateIo(staged, null,
+            new[] { new IoParamSpec("n", RenameTo: "count") }).Error);
+    }
+
     [Fact]
     public void SelectConversionInputs_drops_unwired_undeclared_and_keeps_the_rest()
     {

@@ -1,0 +1,21 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project>
+
+  <!-- One identity for every shipped assembly (.gha, .rhp, Contract, Core). Grasshopper's
+       "Unrecognized Objects" dialog and Rhino's plug-in list read these straight off the binaries:
+       with the SDK defaults a colleague without Wireify saw "Version: (blank)" and no publisher
+       (round-9 S9.64). Version tracks manifest.yml; WireifyCore additionally stamps the build
+       into its informational version (see its csproj). -->
+  <PropertyGroup>
+    <Version>0.3.0</Version>
+    <AssemblyVersion>0.3.0.0</AssemblyVersion>
+    <FileVersion>0.3.0.0</FileVersion>
+    <Company>ifylab</Company>
+    <Product>Wireify</Product>
+    <Authors>Hossein Zargar</Authors>
+    <Copyright>Copyright 2026 Hossein Zargar</Copyright>
+    <Description>Your own Claude Code, live in Grasshopper.</Description>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>

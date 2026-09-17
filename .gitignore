@@ -13,3 +13,6 @@ _scratch/
 # os
 .DS_Store
 Thumbs.db
+
+# Build artifact staged for the PC checkpoint folders; never part of the public repo.
+/wireify-plugin.zip

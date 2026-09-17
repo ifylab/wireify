@@ -1,0 +1,225 @@
+<!doctype html>
+<!-- Companion-app live-report template, scaffolded by Wireify (scaffold_app template:
+     "report"). This file is YOURS (the agent's/user's): Wireify never overwrites it.
+     The shape: hero viewport, KPI strip, output tables, a controls drawer - a page for
+     PRESENTING a definition that is still live end to end. Everything under kit/ is
+     Wireify's and refreshed on Connect; re-theme in theme.css; read kit/KIT.md before
+     reshaping. -->
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>live report</title>
+<link rel="icon" href="./kit/ify-mark.svg" type="image/svg+xml">
+<script>
+  (function () {
+    var stored = null;
+    try { stored = localStorage.getItem('ify-theme'); } catch (e) {}
+    var p = new URLSearchParams(location.search).get('theme');
+    var m = (p === 'dark' || p === 'light' || p === 'auto') ? p : stored;
+    if (m !== 'dark' && m !== 'light' && m !== 'auto') m = 'auto';
+    document.documentElement.setAttribute('data-theme', m);
+  })();
+</script>
+<script type="importmap">
+  {"imports": {"three": "./kit/vendor/three.module.min.js"}}
+</script>
+<link rel="stylesheet" href="./kit/ify-fonts.css">
+<link rel="stylesheet" href="./kit/ify-tokens.css">
+<link rel="stylesheet" href="./kit/ify-app.css">
+<link rel="stylesheet" href="./theme.css">
+<style>
+  /* Controls up front: the live report's point is move-something-watch-the-model-answer,
+     so the adjust drawer sits in a left rail beside the viewport instead of below the
+     tables; KPIs, outputs, and everything else span below both. One column (controls
+     still first) on narrow viewports. */
+  .report-cols {
+    display: grid;
+    grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr);
+    gap: var(--ify-space-5) var(--ify-space-6);
+    align-items: start;
+  }
+  .report-rail { position: sticky; top: calc(var(--ify-app-bar-y) * 2 + 2.75rem); }
+  .report-full { grid-column: 1 / -1; }
+  @media (max-width: 860px) {
+    .report-cols { grid-template-columns: minmax(0, 1fr); }
+    .report-rail { position: static; }
+  }
+  .report-hero .ify-viewport__canvas { block-size: min(56vh, 34rem); }
+  .report-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--ify-app-gap) var(--ify-space-5);
+  }
+</style>
+</head>
+<body class="ify-app">
+
+<header class="ify-appbar">
+  <span class="ify-appbar__mark" aria-label=".ify">
+    <svg viewBox="3 12 27 15" role="img" aria-hidden="true">
+      <circle cx="9" cy="22" r="4" fill="currentColor" />
+      <path d="M16 22 C 21 22, 23 14, 28 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+    </svg>
+  </span>
+  <h1 class="ify-appbar__doc" id="doc-name">definition<span class="ify-appbar__ext">.gh</span></h1>
+  <div class="ify-appbar__right">
+    <span class="ify-status ify-status--stale" data-ify-status><span class="ify-status__dot"></span>connecting</span>
+    <button class="ify-btn ify-btn--sm ify-btn--secondary" type="button" id="bake">save report</button>
+    <button class="ify-toggle" type="button" data-ify-theme aria-label="Switch color theme">Dark</button>
+  </div>
+</header>
+
+<main class="ify-app__main">
+  <div class="report-cols">
+    <section class="ify-section report-rail">
+      <h2 class="ify-section__title">adjust</h2>
+      <div class="ify-controls" data-ify-controls></div>
+    </section>
+
+    <section class="ify-section report-hero">
+      <h2 class="ify-section__title">model</h2>
+      <div class="ify-viewport">
+        <div class="ify-viewport__head">
+          <span class="ify-viewport__label" id="hero-label">viewport</span>
+          <span class="ify-viewport__views" id="hero-views"></span>
+        </div>
+        <div class="ify-viewport__canvas" id="hero-canvas" data-ify-bake="model"></div>
+        <p class="ify-fine" id="hero-status"></p>
+      </div>
+    </section>
+
+    <section class="ify-section report-full">
+      <h2 class="ify-section__title">key figures</h2>
+      <div class="report-kpis" id="kpis"></div>
+    </section>
+
+    <section class="ify-section report-full">
+      <h2 class="ify-section__title">outputs</h2>
+      <div id="views"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="ify-appfoot">
+  <span class="ify-appfoot__prov" id="prov">built with wireify · <span class="ify-wordmark"><span class="ify-wordmark__dot">.</span>ify</span></span>
+</footer>
+
+<script type="module">
+  import { connect, mount, theme, fmt } from './kit/ify-app.js';
+  import { bind as bindViewport } from './kit/ify-viewport.js';
+  import { bake } from './kit/report/ify-report.js';
+
+  const app = connect();
+  // mount drives the pill and the controls drawer; the report's own sections below
+  // (hero, KPIs, output tables) render its presentation-first shape.
+  mount(app, document);
+  theme.bindToggle(document.querySelector('[data-ify-theme]'));
+
+  const setDocName = (name) => {
+    document.getElementById('doc-name').firstChild.textContent = name;
+    document.title = name + '.gh — live report';
+  };
+  const guessed = app.homeId.replace(/-[0-9a-f]{8,}$/i, '');
+  if (guessed) setDocName(guessed);
+  app.onState((s) => { if (s.docName) setDocName(s.docName.replace(/\.gh$/i, '')); });
+
+  // The hero binds the manifest's first geometry-marked view; the manifest is a static
+  // beside this page, and honesty beats guessing when nothing opted in.
+  const heroStatus = document.getElementById('hero-status');
+  fetch('./manifest.json').then((r) => r.json()).then((manifest) => {
+    const geo = (manifest.views || []).find((v) => v.geometry);
+    if (!geo) {
+      heroStatus.className = 'ify-empty';
+      heroStatus.textContent = 'No geometry view declared yet — mark a view "geometry": true in app/manifest.json.';
+      return;
+    }
+    document.getElementById('hero-label').textContent = geo.param ? `view ${geo.param}` : 'model';
+    const bound = bindViewport(app, geo.id, document.getElementById('hero-canvas'),
+      { param: geo.param, statusEl: heroStatus, viewsEl: document.getElementById('hero-views') });
+  }).catch(() => { heroStatus.textContent = 'manifest.json could not be read'; });
+
+  // KPIs: every single-item numeric view becomes a readout; everything else renders as
+  // an output row. Swap freely - kit charts (chart.bars/line) drop into either section.
+  const kpisEl = document.getElementById('kpis');
+  const viewsEl = document.getElementById('views');
+  app.onState((s) => {
+    const views = s.views || [];
+    const isKpi = (v) => v.tree && v.tree.dataCount === 1
+      && (v.samples || []).length === 1 && !isNaN(Number(v.samples[0].value));
+    const kpis = views.filter(isKpi);
+    const rest = views.filter((v) => !isKpi(v));
+
+    kpisEl.replaceChildren(...kpis.map((v) => {
+      const box = document.createElement('div');
+      box.className = 'ify-readout';
+      const label = document.createElement('span');
+      label.className = 'ify-readout__label';
+      label.textContent = v.param;
+      const value = document.createElement('span');
+      value.className = 'ify-readout__value';
+      value.textContent = fmt.num(Number(v.samples[0].value), 3).replace(/\.?0+$/, '');
+      box.append(label, value);
+      return box;
+    }));
+    if (kpis.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'ify-empty';
+      p.textContent = 'No single-number views yet — watched outputs with one numeric item land here.';
+      kpisEl.replaceChildren(p);
+    }
+
+    viewsEl.replaceChildren(...rest.map((v) => {
+      const fig = document.createElement('figure');
+      fig.className = 'ify-panel';
+      const meta = document.createElement('figcaption');
+      meta.className = 'ify-panel__meta';
+      // Truncation labeled: when samples hold less than the data, say so (raise the
+      // view's manifest "samples" to deliver the rows a table or chart needs).
+      meta.textContent = `${fmt.count(v.tree.pathCount)} branch(es) · ${fmt.count(v.tree.dataCount)} item(s)`
+        + (v.samplesTruncated ? ` · showing ${fmt.count((v.samples || []).length)}` : '');
+      const title = document.createElement('div');
+      title.className = 'ify-kicker';
+      title.textContent = v.label || v.param;
+      const pre = document.createElement('pre');
+      pre.textContent = (v.samples || []).map((x) => x.value).join('\n') || '(no samples)';
+      fig.append(meta, title, pre);
+      const warn = (v.warnings || []).join('; ');
+      if (warn) {
+        const fine = document.createElement('p');
+        fine.className = 'ify-fine';
+        fine.textContent = warn;
+        fig.append(fine);
+      }
+      return fig;
+    }));
+    if (rest.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'ify-empty';
+      p.textContent = 'No other views declared yet — ask Claude which outputs to watch.';
+      viewsEl.replaceChildren(p);
+    }
+  });
+
+  // Bake: the explicit export step. Frozen by design - the button says save, the file
+  // says static; the live app stays the live thing.
+  const bakeBtn = document.getElementById('bake');
+  bakeBtn.addEventListener('click', async () => {
+    bakeBtn.disabled = true;
+    try {
+      // "generated", not "saved": the page only knows it built the file and clicked the
+      // anchor - the browser may still discard the download (S6.9f), and claiming a save
+      // it cannot see is a lie by one word. The bake hands the sentence over so no page
+      // has to get it right on its own.
+      const { status, warnings } = await bake(app);
+      heroStatus.textContent = status + (warnings.length ? ` — ${warnings.join('; ')}` : '');
+    } catch (e) {
+      heroStatus.textContent = 'report failed: ' + e.message;
+    } finally {
+      bakeBtn.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>

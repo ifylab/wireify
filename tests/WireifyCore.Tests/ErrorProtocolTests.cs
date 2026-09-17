@@ -27,6 +27,18 @@ public class ErrorProtocolTests
     }
 
     [Fact]
+    public void TryExtractCode_reads_the_leading_protocol_code_and_refuses_prose()
+    {
+        Assert.True(ErrorProtocol.TryExtractCode(ErrorProtocol.DocNotOpen("t.gh"), out var open));
+        Assert.Equal(ErrorProtocol.DocNotOpenCode, open);
+        Assert.True(ErrorProtocol.TryExtractCode(ErrorProtocol.DocNotActive("t.gh"), out var active));
+        Assert.Equal(ErrorProtocol.DocNotActiveCode, active);
+        Assert.False(ErrorProtocol.TryExtractCode("value must be a number for a slider", out _));
+        Assert.False(ErrorProtocol.TryExtractCode("WIREIFY_ without a colon", out _));
+        Assert.False(ErrorProtocol.TryExtractCode(null, out _));
+    }
+
+    [Fact]
     public void NotFound_with_empty_registry_says_so()
     {
         var msg = ErrorProtocol.NotFound(Guid.NewGuid(), new List<WireifyComponentInfo>());
@@ -142,7 +154,7 @@ public class ErrorProtocolTests
         Assert.StartsWith(ErrorProtocol.DocNotOpenCode, msg);
         Assert.Contains("'tower.gh'", msg);
         Assert.Contains("only ever touch that definition", msg);
-        Assert.Contains("Connect", msg);
+        Assert.Contains("Build", msg);
     }
 
     [Fact]
@@ -162,11 +174,51 @@ public class ErrorProtocolTests
     }
 
     [Fact]
-    public void NoSession_points_at_Connect()
+    public void UnknownHome_carries_the_closed_definition_code_and_says_open_the_file()
     {
-        var msg = ErrorProtocol.NoSession("tower-a1b2c3d4");
+        // Round-9 S9.47: the sessionless refusal had no code, so the app API answered the generic
+        // WIREIFY_APP_BAD_REQUEST and the page classified an OPEN definition as closed. A home
+        // nobody can resolve IS a definition that is not open at that path — say so, with the
+        // code a client switches on, and without the dead routes (_Wireify, "client config").
+        var msg = ErrorProtocol.UnknownHome("tower-a1b2c3d4");
 
+        Assert.True(ErrorProtocol.TryExtractCode(msg, out var code));
+        Assert.Equal(ErrorProtocol.DocNotOpenCode, code);
         Assert.Contains("tower-a1b2c3d4", msg);
-        Assert.Contains("Connect from Rhino", msg);
+        Assert.Contains("open that .gh", msg);
+        Assert.Contains("reconnects by itself", msg);
+        Assert.DoesNotContain("_Wireify", msg);
+        Assert.DoesNotContain("client config", msg);
+    }
+
+    [Fact]
+    public void Page_copy_names_the_apps_own_file_and_never_the_session()
+    {
+        // Round-10 S10.7/S10.3: the MCP sentence ("this session is connected to …") reached a
+        // browser user verbatim, and after a Save As it named the copy the session followed.
+        var closed = ErrorProtocol.PageDocNotOpen("HALO.gh");
+        Assert.StartsWith("definition closed", closed);
+        Assert.Contains("'HALO.gh'", closed);
+        Assert.Contains("reconnects on its own", closed);
+        Assert.DoesNotContain("session", closed);
+        Assert.DoesNotContain("Build", closed);
+
+        var unnamed = ErrorProtocol.PageDocNotOpen(null);
+        Assert.StartsWith("definition closed", unnamed);
+        Assert.Contains("the definition this app belongs to", unnamed);
+
+        var background = ErrorProtocol.PageDocNotActive("HALO.gh");
+        Assert.Contains("'HALO.gh' is open but not the front Grasshopper tab", background);
+        Assert.Contains("bring it to front", background);
+        Assert.DoesNotContain("session", background);
+        Assert.DoesNotContain("mutat", background);
+    }
+
+    [Fact]
+    public void DocNotOpen_names_Build_on_the_component_not_a_command()
+    {
+        var msg = ErrorProtocol.DocNotOpen("tower.gh");
+        Assert.Contains("press Build on the Wireify component", msg);
+        Assert.DoesNotContain("_Wireify", msg);
     }
 }

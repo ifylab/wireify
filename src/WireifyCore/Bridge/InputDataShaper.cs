@@ -76,7 +76,12 @@ namespace WireifyCore.Bridge
             var warnings = clipped == 0
                 ? null
                 : new List<string> { WireifyContract.WireifyIds.ClipTextWarning(param, clipped) };
-            return new InputData(param, access, tree, types, samples, warnings);
+            // Explicit truncation flag: dataCount already told the truth, but nothing FLAGGED
+            // that samples held less than the data — a page trusting samples rendered a
+            // five-row table and looked fine (round-5 S5.11i). Null when complete, so the flag
+            // never reads as "false = verified complete" on old payload consumers.
+            var truncated = samples.Count < dataCount ? (bool?)true : null;
+            return new InputData(param, access, tree, types, samples, warnings, SamplesTruncated: truncated);
         }
 
         /// <summary>Cap a value string for transport, returning the (possibly shortened) text plus

@@ -45,6 +45,22 @@ public class HomeScaffolderTests
     }
 
     [Fact]
+    public void Fresh_scaffold_ships_the_frontend_skill_pair()
+    {
+        // W-D: the authored design half plus the skillmeld-vendored craft skill (Apache-2.0,
+        // provenance in skills/PROVENANCE.md) — its license text must travel with it.
+        var home = TempDir();
+
+        New().ScaffoldHome(home, new HomeScaffolder.Substitutions(52806, "sek", "tower.gh"));
+
+        var skills = Path.Combine(home, ".claude", "skills");
+        Assert.True(File.Exists(Path.Combine(skills, "wireify-frontend", "SKILL.md")));
+        Assert.True(File.Exists(Path.Combine(skills, "frontend-design", "SKILL.md")));
+        Assert.True(File.Exists(Path.Combine(skills, "frontend-design", "LICENSE.txt")));
+        Assert.Contains("Wireify note", File.ReadAllText(Path.Combine(skills, "frontend-design", "SKILL.md")));
+    }
+
+    [Fact]
     public void Fresh_scaffold_ships_dev_mode_skill_and_devlog_permissions()
     {
         var home = TempDir();
@@ -53,7 +69,50 @@ public class HomeScaffolderTests
 
         Assert.True(File.Exists(Path.Combine(home, ".claude", "skills", "wireify-dev", "SKILL.md")));
         var settings = File.ReadAllText(Path.Combine(home, ".claude", "settings.json"));
-        Assert.Contains("Write(~/.ify/wireify/devlog.md)", settings);
+        // B2: Edit rules cover all file-editing tools on current Claude Code; the old Write rule
+        // no longer matches anything and drew a startup warning — it must stay gone.
+        Assert.Contains("Edit(~/.ify/wireify/devlog.md)", settings);
+        Assert.DoesNotContain("Write(~/.ify/wireify/devlog.md)", settings);
+    }
+
+    [Fact]
+    public void Kit_vendor_ships_the_complete_three_js_distribution()
+    {
+        // B25's regression pin: three r180 is a TWO-file npm build — three.module.min.js
+        // imports ./three.core.min.js by relative path, and vendoring one file of the pair
+        // shipped a report template that was dead on every home (round-5 S5.4b: one missing
+        // ES module takes down the whole module graph, empty states and save-report included).
+        var vendor = Path.Combine(TemplateRoot(), "app", "kit", "vendor");
+        Assert.True(File.Exists(Path.Combine(vendor, "three.module.min.js")));
+        Assert.True(File.Exists(Path.Combine(vendor, "three.core.min.js")));
+        Assert.True(File.Exists(Path.Combine(vendor, "OrbitControls.js")));
+        Assert.Contains("three.core.min.js", File.ReadAllText(Path.Combine(vendor, "NOTICE-three.txt")));
+        // The wrapper must actually import the core it ships beside — the pair is one build.
+        Assert.Contains("./three.core.min.js", File.ReadAllText(Path.Combine(vendor, "three.module.min.js")));
+    }
+
+    [Fact]
+    public void Fresh_scaffold_preallows_the_browser_verification_toolset()
+    {
+        // I8: the agent verifies its own app pages via Claude in Chrome without stalling on
+        // permission prompts mid-verify. Name-level rules by design (origin scoping is not
+        // expressible in Claude Code permissions); inert no-ops when the integration is absent.
+        var home = TempDir();
+
+        New().ScaffoldHome(home, new HomeScaffolder.Substitutions(52802, "sek", "tower.gh"));
+
+        var settings = File.ReadAllText(Path.Combine(home, ".claude", "settings.json"));
+        Assert.Contains("mcp__claude-in-chrome__navigate", settings);
+        Assert.Contains("mcp__claude-in-chrome__read_page", settings);
+        Assert.Contains("mcp__claude-in-chrome__read_console_messages", settings);
+        Assert.Contains("mcp__claude-in-chrome__computer", settings);
+        // Round-6 S6.9b additions: javascript_tool (the practical way to read api/state
+        // from inside the page), tabs_close_mcp (create without close guaranteed litter),
+        // and the two remaining verification reads.
+        Assert.Contains("mcp__claude-in-chrome__javascript_tool", settings);
+        Assert.Contains("mcp__claude-in-chrome__tabs_close_mcp", settings);
+        Assert.Contains("mcp__claude-in-chrome__read_network_requests", settings);
+        Assert.Contains("mcp__claude-in-chrome__resize_window", settings);
     }
 
     [Fact]

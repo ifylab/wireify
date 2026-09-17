@@ -11,6 +11,12 @@ Composed 2026-06-28 (skillmeld Track B, all-MIT); every instruction traces byte-
 
 Both are MIT and retain their MIT terms; MIT is compatible with this project's Apache-2.0 license. The carried `references/` and `scripts/` ship with `rhino-grasshopper-dev`.
 
+### 2026-08-31 — frontend composition (the W-D pass)
+
+Skillmeld discovery ran for the companion-app frontend use case (intake -> ground on this repo -> signed catalog sync -> discover: 24 candidates). One source earned vendoring; the rest were rejected for scope conflicts (claude.ai-artifact/CDN assumptions, PNG/PDF art, Playwright testing where Wireify homes use Claude in Chrome, document formats).
+
+- **`frontend-design`** (Apache-2.0) — from https://github.com/anthropics/skills (`skills/frontend-design`, catalog-pinned commit `3b3fad96`, bundle hash `928a5a30...`, security scan PASS with info-level findings only). Vendored with its `LICENSE.txt`; unedited apart from ONE marked "*Wireify note:*" under the title scoping its palette/typeface freedom to the variant ladder's re-theme/re-skin rungs — the `.ify` kit stays the default language.
+
 ### Local modifications (2026-07-24)
 
 Two in-file notes, both marked "*Wireify note:*" where they sit; nothing else in either vendored skill is altered:
@@ -26,6 +32,7 @@ All Apache-2.0:
 - **`wireify-port`** — the IronPython 2 -> CPython 3 migration flow (read the legacy code, introspect live inputs, regenerate typed, run both, diff until equivalent).
 - **`wireify-retro`** — the user-invoked consolidation pass over the definition's `MEMORY.md` lesson ledger (merge near-duplicates, rewrite stale entries, promote cross-file rules, archive — never delete).
 - **`aec-structural`** — opt-in structural/AEC engineering semantics for definitions whose numbers are engineering quantities.
+- **`wireify-frontend`** — the companion-app design half: propose the page's shape, manifest declarations (views are a conversation, never auto-picked), the `.ify` design language + anti-slop rules, dataviz honesty, the static-default/React-escalation rule, report rules, and the browser verify flow. Routes kit mechanics to `app/kit/KIT.md` and generic visual craft to the vendored `frontend-design`.
 - **`wireify-dev`** — opt-in dev mode for people testing Wireify itself: activated per session ("dev mode on"), it appends structured findings (bugs, friction, successes, ideas) to the local `~/.ify/wireify/devlog.md` for hand-back to the Wireify developers. Off by default; writes nothing unless activated.
 
 ## Wireify adaptations

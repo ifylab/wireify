@@ -35,6 +35,22 @@ namespace WireifyCore.Bridge
 
         const int MaxRegistryEntries = 20;
 
+        /// <summary>The stable code a protocol message opens with (<c>WIREIFY_DOC_NOT_OPEN: …</c>),
+        /// so a surface that answers with its own code field can carry the REAL code instead of a
+        /// generic one — the app API said <c>WIREIFY_APP_BAD_REQUEST</c> while its message said
+        /// <c>WIREIFY_DOC_NOT_OPEN</c>, and a client switching on the code conflated a closed
+        /// definition with a bad token (round-7 finding 11). False when the message carries none.</summary>
+        public static bool TryExtractCode(string? message, out string code)
+        {
+            code = "";
+            if (string.IsNullOrEmpty(message) || !message!.StartsWith("WIREIFY_", StringComparison.Ordinal)) return false;
+            var end = 0;
+            while (end < message.Length && (char.IsUpper(message[end]) || message[end] == '_')) end++;
+            if (end < 9 || end >= message.Length || message[end] != ':') return false;
+            code = message.Substring(0, end);
+            return true;
+        }
+
         public static string Busy(double pickupSeconds) =>
             $"{BusyCode}: Rhino's UI thread did not pick this call up within {pickupSeconds:0}s — " +
             "busy or blocked (a long solve, a modal dialog, or a hung operation). The call was NOT executed. " +
@@ -55,8 +71,8 @@ namespace WireifyCore.Bridge
         public static string DocNotOpen(string fileName) =>
             $"{DocNotOpenCode}: this session is connected to '{fileName}', which is not open in this " +
             "Rhino. This session's tools only ever touch that definition. Recovery: ask the user to " +
-            "reopen it, or to Connect from the definition they mean to work on (its socket button or " +
-            "_Wireify) — that spawns a separate session with that definition's own memory.";
+            "reopen it, or to press Build on the Wireify component of the definition they mean to " +
+            "work on — that spawns a separate session with that definition's own memory.";
 
         /// <summary>A mutation while the session's document is open but not the front canvas.
         /// Reads route to the bound document anywhere; changes only happen where the user is
@@ -68,11 +84,35 @@ namespace WireifyCore.Bridge
             $"and ask the user to bring '{fileName}' to front (its Grasshopper tab) only when you are ready " +
             "to mutate, then call again. Never dodge this by retargeting components on the front canvas.";
 
-        /// <summary>The request carried a session header the server does not know — a hand-crafted
-        /// client, or a stale config. Not agent-recoverable; no stable code.</summary>
-        public static string NoSession(string homeId) =>
-            $"no session is registered for '{homeId}' on this server — Connect from Rhino (socket " +
-            "button or _Wireify) to establish one; a hand-written client config cannot route.";
+        /// <summary>The companion app's copy for a definition that is not open, written for the
+        /// person at the page (no terminal, no tools, no memory ledger — the MCP sentence above
+        /// reached them verbatim in round 10, S10.3/S10.7). Opens with "definition closed" so a
+        /// page classifying by prose still lands on the right state; the kit switches on the
+        /// code. <paramref name="fileName"/> null = no open document names the file and the
+        /// home's own record did not either.</summary>
+        public static string PageDocNotOpen(string? fileName) =>
+            (string.IsNullOrEmpty(fileName)
+                ? "definition closed — the definition this app belongs to is not open in this Rhino"
+                : $"definition closed — '{fileName}' is not open in this Rhino")
+            + "; reopen it and this page reconnects on its own";
+
+        /// <summary>The companion app's copy for a push while its definition is open but not
+        /// the front Grasshopper tab. Names the app's OWN file — never the file a session
+        /// binding followed a Save As to (round-10 S10.7).</summary>
+        public static string PageDocNotActive(string fileName) =>
+            $"'{fileName}' is open but not the front Grasshopper tab — bring it to front to interact; " +
+            "the page keeps reading from the background";
+
+        /// <summary>The request named a home that no open definition matches — neither a session
+        /// bound at Connect nor an open document whose path hashes to it. The closed-definition
+        /// code, because that is what it is: a Wireify home IS the .gh path, so opening that
+        /// file (at that path) is the whole recovery — the app page reconnects on its own, a
+        /// Claude session simply calls again. Round 9 (S9.47): the old sessionless refusal had no
+        /// code, so the page classified an OPEN definition as closed.</summary>
+        public static string UnknownHome(string homeId) =>
+            $"{DocNotOpenCode}: no open definition matches '{homeId}' — open that .gh in Grasshopper " +
+            "and this routes on its own (the app page reconnects by itself; a session retries on its " +
+            "next call). A home is keyed to the file's path: a moved or renamed file is a different home.";
 
         /// <summary>set_source refused a blind overwrite: the component's stamped body hash no
         /// longer matches — the user edited the code outside Wireify (the GH script editor). The

@@ -130,16 +130,22 @@ public class MarshallingBridgeTests
     [Fact]
     public void Session_context_is_snapshotted_into_the_call_and_cleared_after()
     {
-        var sink = new List<string?>();
+        var sink = new List<SessionCallContext?>();
         var bridge = new MarshallingBridge(new FakeBridge(), new InlineUiInvoker(),
             callContext: sink.Add);
 
         WireifySessionContext.CurrentHomeId = "tower-a1b2c3d4";
+        WireifySessionContext.PathFirst = true;
         try { bridge.GetRuntimeInfo(); }
-        finally { WireifySessionContext.CurrentHomeId = null; }
+        finally { WireifySessionContext.CurrentHomeId = null; WireifySessionContext.PathFirst = false; }
         bridge.GetRuntimeInfo(); // no ambient session — the slot gets null for the call too
 
-        // set-before / clear-after per call: the resolver's slot never leaks across calls.
-        Assert.Equal(new string?[] { "tower-a1b2c3d4", null, null, null }, sink);
+        // set-before / clear-after per call: the resolver's slot never leaks across calls, and
+        // the surface's path-first preference rides the same snapshot.
+        Assert.Equal(4, sink.Count);
+        Assert.Equal(new SessionCallContext("tower-a1b2c3d4", PathFirst: true), sink[0]);
+        Assert.Null(sink[1]);
+        Assert.Null(sink[2]);
+        Assert.Null(sink[3]);
     }
 }

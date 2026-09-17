@@ -25,6 +25,10 @@ public class ConfigMergerTests
         Assert.Equal("http", (string)entry["type"]!);
         Assert.Equal("http://127.0.0.1:52801/mcp", (string)entry["url"]!);
         Assert.Equal("sek", (string)entry["headers"]!["X-Wireify-Secret"]!);
+        // The heavy-solve timeout replaced the dropped MCP task machinery — it must ride THIS
+        // entry (the template is never rendered, and the merge replaces the whole object), or
+        // no home ever gets it.
+        Assert.Equal(600000, (int)entry["request_timeout_ms"]!);
     }
 
     [Fact]

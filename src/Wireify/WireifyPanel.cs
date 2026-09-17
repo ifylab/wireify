@@ -35,8 +35,9 @@ namespace Wireify
         readonly Label _docLabel = new Label { TextAlignment = TextAlignment.Right };
         readonly Dictionary<string, Label> _rows = new Dictionary<string, Label>();
         readonly ListBox _canvasList = new ListBox { Height = 84 };
-        readonly Button _connect = new Button { Text = "Connect" };
+        readonly Button _connect = new Button { Text = "Build" };
         readonly Button _openHome = new Button { Text = "Open home", Enabled = false };
+        readonly Button _openApp = new Button { Text = "Open app", Enabled = false };
         readonly Button _openLog = new Button { Text = "Open log" };
         readonly TextArea _log = new TextArea { ReadOnly = true, Wrap = false, Font = Eto.Drawing.Fonts.Monospace(9) };
 
@@ -65,6 +66,8 @@ namespace Wireify
             _connect.Click += (_, _) => StartConnect();
             _openHome.Click += (_, _) => OpenFolder(_homeDir);
             _openLog.Click += (_, _) => OpenFolder(_controller.LogsDirectory);
+            // The use gesture, without a socket on the canvas: the live link is minted on click.
+            _openApp.Click += (_, _) => Task.Run(() => _controller.OpenApp(_controller.ActiveDefinitionPath()));
 
             foreach (var line in _controller.RecentLog) AppendLog(line);
             RenderState(_controller.State);
@@ -95,7 +98,7 @@ namespace Wireify
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 6,
-                Items = { _connect, _openHome, _openLog },
+                Items = { _connect, _openApp, _openHome, _openLog },
             };
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -164,7 +167,7 @@ namespace Wireify
                     Ui(() =>
                     {
                         _connect.Enabled = true;
-                        _connect.Text = "Reconnect";
+                        _connect.Text = "New session";
                         RefreshCanvasList();
                     });
                 }
@@ -173,15 +176,25 @@ namespace Wireify
 
         void RenderState(WireifyConnectionState state)
         {
-            // Reconnect always spawns a fresh terminal — the way back after closing the window.
-            _connect.Text = state >= WireifyConnectionState.TerminalLaunched ? "Reconnect" : "Connect";
-            switch (state)
+            // Everything follows the ACTIVE definition's own session — header included: a file
+            // whose Build failed must not read "connected" off another file's terminal
+            // (round-11 S11.32), and a green header over a body of dashes contradicted itself
+            // in one screenshot (round-12 S12.8). The server level is the floor.
+            var mine = state;
+            try
+            {
+                mine = _controller.StateFor(_controller.ActiveDefinitionPath());
+                if (mine < WireifyConnectionState.ServerListening && state >= WireifyConnectionState.ServerListening)
+                    mine = WireifyConnectionState.ServerListening;
+            }
+            catch { /* no canvas yet: fall back to the global state */ }
+            // New session always spawns a fresh terminal — the way back after closing the window.
+            _connect.Text = mine >= WireifyConnectionState.TerminalLaunched ? "New session" : "Build";
+            switch (mine)
             {
                 case WireifyConnectionState.Connected:
                     _dot.BackgroundColor = DotConnected;
                     _stateLabel.Text = "Claude connected";
-                    _rows["claude"].Text = "connected";
-                    _rows["claude"].TextColor = SystemColors.ControlText;
                     break;
                 case WireifyConnectionState.TerminalLaunched:
                     _dot.BackgroundColor = DotLaunched;
@@ -194,6 +207,21 @@ namespace Wireify
                 default:
                     _dot.BackgroundColor = DotIdle;
                     _stateLabel.Text = "Idle";
+                    break;
+            }
+            var claude = _rows["claude"];
+            switch (mine)
+            {
+                case WireifyConnectionState.Connected:
+                    claude.Text = "connected";
+                    claude.TextColor = SystemColors.ControlText;
+                    break;
+                case WireifyConnectionState.TerminalLaunched:
+                    claude.Text = "waiting for first request (first run: approve the wireify server in the terminal)";
+                    claude.TextColor = SystemColors.ControlText;
+                    break;
+                default:
+                    if (claude.TextColor != TextError) claude.Text = "-";
                     break;
             }
             RefreshDocLabel();
@@ -221,13 +249,40 @@ namespace Wireify
         void RefreshDocLabel()
         {
             // Touch the canvas only once Grasshopper is up (the server starts when GH loads).
-            if (_controller.State == WireifyConnectionState.ServerStopped) { _docLabel.Text = ""; return; }
+            if (_controller.State == WireifyConnectionState.ServerStopped)
+            {
+                _docLabel.Text = "";
+                _openApp.Enabled = false;
+                _openHome.Enabled = false;
+                return;
+            }
             try
             {
                 var path = _controller.ActiveDefinitionPath();
                 _docLabel.Text = string.IsNullOrEmpty(path) ? "no saved definition" : Path.GetFileName(path);
+                // Every button follows the ACTIVE definition, whoever pressed Build: the home
+                // folder exists or it does not, and the step rows show that definition's last
+                // Build — a panel opened afterwards used to hold dashes above a log that listed
+                // every completed step, with Open home dead for good (round-10 S10.5).
+                var status = _controller.AppStatusFor(path);
+                _openApp.Enabled = status.PageExists;
+                _homeDir = status.HomeExists ? (Path.GetDirectoryName(status.AppFolder) ?? "") : "";
+                _openHome.Enabled = _homeDir.Length > 0;
+                // Rows read the ACTIVE file's last Build — cleared first, so a file with no Build
+                // shows dashes instead of the previous definition's walk (round-11 S11.27).
+                foreach (var kind in new[] { "server", "home", "config", "preflight", "terminal" })
+                {
+                    _rows[kind].Text = "-";
+                    _rows[kind].TextColor = SystemColors.ControlText;
+                }
+                foreach (var step in _controller.RecentStepsFor(path)) RenderStep(step);
             }
-            catch { _docLabel.Text = ""; }
+            catch
+            {
+                _docLabel.Text = "";
+                _openApp.Enabled = false;
+                _openHome.Enabled = false;
+            }
         }
 
         void RefreshCanvasList()

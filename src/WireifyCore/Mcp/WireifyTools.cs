@@ -22,17 +22,61 @@ namespace WireifyCore.Mcp
     {
         readonly IGrasshopperBridge _bridge;
         readonly Action<Guid, bool>? _activity;
+        readonly Func<string, WireifyCore.Hosting.AppSurfaceInfo>? _appInfo;
+        readonly Func<string, string, WireifyCore.Hosting.ScaffoldAppResult>? _appScaffold;
 
         // The two-strikes leash, mechanical: consecutive failed mutations per component id (the
         // tools instance lives for the host lifetime). From the second consecutive failure the
         // error/result carries the LEASH line — advisory and in-band, never a refusal to work.
         readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, int> _consecutiveFailures = new();
 
-        public WireifyTools(IGrasshopperBridge bridge, Action<Guid, bool>? activity = null)
+        public WireifyTools(
+            IGrasshopperBridge bridge,
+            Action<Guid, bool>? activity = null,
+            Func<string, WireifyCore.Hosting.AppSurfaceInfo>? appInfo = null,
+            Func<string, string, WireifyCore.Hosting.ScaffoldAppResult>? appScaffold = null)
         {
             _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
             _activity = activity;
+            _appInfo = appInfo;
+            _appScaffold = appScaffold;
         }
+
+        /// <summary>The companion-app surface for THIS session's home: URL (with the per-run
+        /// token), what exists in the home, declared counts. No bridge call — pure server-side
+        /// reads, so it works whatever tab is in front.</summary>
+        public WireifyCore.Hosting.AppSurfaceInfo GetAppInfo()
+            => Guard("get_app_info", () =>
+            {
+                if (_appInfo is null)
+                    throw new InvalidOperationException(
+                        "this host serves no app surface — the companion app is unavailable here.");
+                var home = WireifySessionContext.CurrentHomeId
+                    ?? throw new InvalidOperationException(
+                        "no session home on this request — get_app_info needs the session header a Connect-launched terminal carries (X-Wireify-Home).");
+                return _appInfo(home);
+            });
+
+        /// <summary>Raise this session's companion-app folder to a ready state: stamp the .ify
+        /// app kit (Wireify-owned, refreshed), seed <c>index.html</c> and <c>manifest.json</c>
+        /// only when absent — existing agent/user files are never touched. Disk-only, no bridge
+        /// call. Returns the surface info PLUS the action report (what was seeded vs left
+        /// alone), so the caller can say truthfully what just happened.</summary>
+        public WireifyCore.Hosting.ScaffoldAppResult ScaffoldApp(
+            [Description("Page shape to seed when index.html does not exist yet: panel (control-panel starter, default) or report (live-report shape: hero viewport, KPI strip, views, controls drawer). An existing page is never replaced.")] string template = "panel")
+            => Guard("scaffold_app", () =>
+            {
+                if (_appScaffold is null)
+                    throw new InvalidOperationException(
+                        "this host serves no app surface — the companion app is unavailable here.");
+                if (template != "panel" && template != "report")
+                    throw new ArgumentException(
+                        $"template '{template}' is not a page shape — pass panel or report.", nameof(template));
+                var home = WireifySessionContext.CurrentHomeId
+                    ?? throw new InvalidOperationException(
+                        "no session home on this request — scaffold_app needs the session header a Connect-launched terminal carries (X-Wireify-Home).");
+                return _appScaffold(home, template);
+            });
 
         int BumpFailure(Guid id) => _consecutiveFailures.AddOrUpdate(id, 1, (_, n) => n + 1);
         void ResetFailures(Guid id) => _consecutiveFailures.TryRemove(id, out _);
@@ -87,6 +131,14 @@ namespace WireifyCore.Mcp
             [Description("InstanceGuid of the component (or floating param, e.g. a panel or slider) to introspect.")] Guid id)
             => Guard("introspect_component", () => _bridge.IntrospectComponent(id));
 
+        public DocumentGraph GetDocumentGraph(
+            [Description("Scope the read to these object ids (a component and its neighbours) — no cap applies; ids no object carries come back in missingIds. Omit for the whole definition.")] Guid[]? ids = null,
+            [Description("Include each node's input/output params (names, access, type, hint, id) — default true. The wiring itself is always the edges list.")] bool includeParams = true,
+            [Description("Also inline each output's live data (3 samples per branch, 12 total) — the values a port or an explanation needs, in the same call (default false).")] bool includeOutputs = false,
+            [Description("Cap on the nodes for production-size canvases (default 300; <=0 = no cap). Selected and Wireify-managed objects are kept first; nodesTruncated + totalObjectCount report the cut.")] int maxComponents = SummaryBounding.DefaultMaxComponents,
+            [Description("Case-insensitive substring filter on object name/nickname — a targeted subgraph instead of the whole canvas.")] string? nameFilter = null)
+            => Guard("get_document_graph", () => _bridge.GetDocumentGraph(ids, includeParams, includeOutputs, maxComponents, nameFilter));
+
         public InputData ReadInputData(
             [Description("InstanceGuid of the component that owns the input.")] Guid id,
             [Description("Name or nickname of the input parameter to read.")] string inputParam,
@@ -105,8 +157,17 @@ namespace WireifyCore.Mcp
         // --- Build (mutation) ---
 
         public Guid CreatePythonComponent(
-            [Description("Target runtime: CPython3 (default) or IronPython2.")] PythonRuntime runtime = PythonRuntime.CPython3)
-            => Guard("create_python_component", () => _bridge.CreatePythonComponent(runtime));
+            [Description("Target runtime: CPython3 (default) or IronPython2.")] PythonRuntime runtime = PythonRuntime.CPython3,
+            [Description("Nickname for the new component. Component nicknames are user-facing — the companion app renders them on every card and report heading, and an unnamed component presents as the stock 'Py3'. Name it for what it computes.")] string? nickName = null)
+            => Guard("create_python_component", () => _bridge.CreatePythonComponent(runtime, nickName));
+
+        public AppControlState CreateControlComponent(
+            [Description("What to create: kind (slider, panel, toggle, valuelist, button, mdslider, colour, or knob) plus that kind's configuration; nearId places it beside an existing object.")] ControlSpec spec)
+            => Guard("create_control_component", () =>
+            {
+                if (spec is null) throw new ArgumentException("spec is required.", nameof(spec));
+                return _bridge.CreateControlComponent(spec);
+            });
 
         public SetSourceResult SetSource(
             [Description("InstanceGuid of the target Python component.")] Guid id,
@@ -120,17 +181,19 @@ namespace WireifyCore.Mcp
                 return WithActivity(id, () =>
                 {
                     var report = _bridge.SetSource(id, validated, runtime, solve, overwriteExternalEdits);
+                    // The result schema declares report required; a null would serialize away
+                    // and hand every schema-validating client an invalid payload (round-4
+                    // defect C). solve:false gets an honest placeholder instead.
+                    report ??= new RuntimeReport(
+                        new[] { new RuntimeMessage("remark", "compiled without solving (solve=false) — outputs are stale until a solve; call run to execute") },
+                        Array.Empty<OutputValue>());
                     return new SetSourceResult(id, solve, report);
                 });
             });
 
-        public Guid SetTypedIo(
+        public TypedIoResult SetTypedIo(
             [Description("InstanceGuid of the component whose params to (re)build from its script.")] Guid id)
-            => Guard("set_typed_io", () => WithActivity(id, () =>
-            {
-                _bridge.SetParametersFromScript(id);
-                return id;
-            }));
+            => Guard("set_typed_io", () => WithActivity(id, () => _bridge.SetParametersFromScript(id)));
 
         public WireResult Wire(
             [Description("InstanceGuid of the upstream (source) component.")] Guid fromId,
@@ -190,6 +253,24 @@ namespace WireifyCore.Mcp
         public DeletedComponent DeleteComponent(
             [Description("InstanceGuid of the Wireify-managed object to delete: a Wireify socket or a script component. Anything else is refused — remove it manually in Grasshopper.")] Guid id)
             => Guard("delete_component", () => WithActivity(id, () => _bridge.DeleteComponent(id)));
+
+        public ClearBadgeResult ClearBadge(
+            [Description("InstanceGuid of the object whose wireify badge record to remove. Stale guids are accepted — clearing a record whose object is gone is cleanup, not an error.")] Guid id)
+            => Guard("clear_badge", () => WithActivity(id, () => _bridge.ClearBadge(id)));
+
+        public RenameResult RenameComponent(
+            [Description("InstanceGuid of the object to rename: a native control (slider, panel, toggle, value list, button, MD slider, colour swatch, knob), a script component, or any native component. Wireify sockets are refused — they are addressed by number; convert first.")] Guid id,
+            [Description("The new nickname — user-facing text: the companion app shows a control's nickname on its card and the report prints it as the row label. Keep a 'W<n> ' prefix when the user still addresses a converted component by number. Ignored when clear is true.")] string nickName = "",
+            [Description("Un-name the object deliberately: the nickname becomes empty and its app card and report row read by kind again. The way back after a rename the user did not want — one undo record like any rename. Without it an empty nickName is refused.")] bool clear = false)
+            => Guard("rename_component", () =>
+            {
+                if (!clear && string.IsNullOrWhiteSpace(nickName))
+                    throw new ArgumentException(
+                        "nickName must not be empty — names are the page's copy. To un-name deliberately, pass clear: true.",
+                        nameof(nickName));
+                var final = clear ? "" : nickName.Trim();
+                return WithActivity(id, () => _bridge.RenameComponent(id, final));
+            });
 
         public PanelText SetPanelText(
             [Description("InstanceGuid of the Panel component to write into.")] Guid id,

@@ -7,13 +7,14 @@
 # run on a machine with Rhino installed:
 #
 #   cd dist/wireify
-#   "C:\Program Files\Rhino 8\System\yak.exe" build
-#   # inspect the produced wireify-<version>-rh8_0-*.yak, then:
+#   "C:\Program Files\Rhino 8\System\yak.exe" build --platform win
+#   # inspect the produced wireify-<version>-rh8_0-win.yak, then:
 #   "C:\Program Files\Rhino 8\System\yak.exe" login
-#   "C:\Program Files\Rhino 8\System\yak.exe" push wireify-<version>-rh8_0-*.yak
+#   "C:\Program Files\Rhino 8\System\yak.exe" push wireify-<version>-rh8_0-win.yak
 #
-# NB: only Windows is live-verified today. If yak infers an "-any" distribution
-# tag, rename the file to ...-rh8_0-win.yak before pushing (the tag is the filename).
+# NB: only Windows is live-verified today, and yak cannot infer the platform from
+# a .NET assembly — without --platform win the tag comes out "-any", which the
+# README contradicts. The tag is part of the filename the package server keys on.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

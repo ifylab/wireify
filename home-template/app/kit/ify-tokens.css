@@ -1,0 +1,158 @@
+/* SPDX-License-Identifier: Apache-2.0
+   .ify app kit - design tokens, from @ifylab/design-system tokens.css (Apache-2.0).
+   Two documented deltas from upstream, both marked DELTA below. Everything else is
+   verbatim - re-theme in ../theme.css (loaded after this file), never here: this
+   file is refreshed on every Connect. */
+
+:root {
+  --ify-bg: oklch(99% 0.004 196);
+  --ify-surface: oklch(97% 0.006 196);
+  --ify-surface-2: oklch(94.5% 0.008 196);
+  --ify-ink: oklch(25% 0.022 200);
+  --ify-ink-muted: oklch(45% 0.022 190);
+  --ify-ink-subtle: oklch(51% 0.022 188);
+  --ify-line: oklch(90% 0.010 196);
+  --ify-line-strong: oklch(82% 0.012 196);
+  --ify-accent: oklch(50.9% 0.0506 195.7);
+  --ify-accent-strong: oklch(43% 0.060 196);
+  --ify-accent-muted: oklch(93% 0.022 196);
+  --ify-on-accent: oklch(99% 0.005 196);
+  --ify-warm: oklch(88.7% 0.0922 73.6);
+  --ify-warm-strong: oklch(52% 0.120 66);
+  --ify-warm-surface: oklch(95.4% 0.0339 80.3);
+  --ify-on-warm: oklch(25% 0.030 70);
+  --ify-wire-rest: oklch(56% 0.030 176);
+  --ify-wire-active: var(--ify-accent-strong);
+  --ify-socket: var(--ify-accent);
+  --ify-focus: var(--ify-accent-strong);
+
+  --ify-font-display: 'Jost Variable', system-ui, sans-serif;
+  --ify-font-text: 'Hanken Grotesk Variable', system-ui, sans-serif;
+  /* DELTA 1: upstream --ify-font-mono is 'Commit Mono'. The kit bundles no Commit Mono
+     (48 KB for the role with the least presence in a companion app) - both mono roles
+     collapse onto Fragment Mono. Set table values at --ify-text-sm with tabular-nums. */
+  --ify-font-mono: 'Fragment Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ify-font-label: 'Fragment Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ify-weight-thin: 100;
+  --ify-weight-light: 300;
+  --ify-weight-regular: 400;
+  --ify-weight-medium: 500;
+  --ify-weight-semibold: 600;
+  --ify-weight-bold: 800;
+  --ify-text-xs: 0.75rem;
+  --ify-text-sm: 0.875rem;
+  --ify-text-base: 1rem;
+  --ify-text-lg: 1.125rem;
+  --ify-text-xl: 1.375rem;
+  --ify-text-2xl: 1.75rem;
+  --ify-display-sm: clamp(1.75rem, 1.2rem + 2.6vw, 2.75rem);
+  --ify-display-md: clamp(2.25rem, 1.4rem + 4vw, 4rem);
+  --ify-display-lg: clamp(2.75rem, 1.4rem + 6.4vw, 6rem);
+  --ify-leading-tight: 1.1;
+  --ify-leading-snug: 1.25;
+  --ify-leading-normal: 1.55;
+  --ify-leading-relaxed: 1.7;
+  --ify-tracking-display: -0.03em;
+  --ify-tracking-tight: -0.01em;
+  --ify-tracking-normal: 0;
+  --ify-tracking-wide: 0.06em;
+  --ify-measure: 68ch;
+  --ify-space-0: 0;
+  --ify-space-1: 0.25rem;
+  --ify-space-2: 0.5rem;
+  --ify-space-3: 0.75rem;
+  --ify-space-4: 1rem;
+  --ify-space-5: 1.5rem;
+  --ify-space-6: 2rem;
+  --ify-space-7: 3rem;
+  --ify-space-8: 4rem;
+  --ify-space-9: 6rem;
+  --ify-space-10: 8rem;
+  --ify-radius-none: 0;
+  --ify-radius-sm: 2px;
+  --ify-radius-md: 4px;
+  --ify-radius-lg: 8px;
+  --ify-radius-pill: 999px;
+  --ify-wire-stroke: 1.75px;
+  --ify-wire-stroke-active: 2.25px;
+  --ify-wire-socket-radius: 4px;
+  --ify-wire-socket-stroke: 1.5px;
+  --ify-wire-sag-factor: 0.25;
+  --ify-wire-exit-strength: 0.5;
+  --ify-motion-dur-fast: 120ms;
+  --ify-motion-dur: 240ms;
+  --ify-motion-dur-slow: 480ms;
+  --ify-motion-dur-wire: 1100ms;
+  --ify-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ify-motion-ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ify-motion-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* DELTA 2: app-density aliases. The scale is unchanged; these name the app register
+     (one to two steps tighter than the site's document rhythm) so component rules read
+     intent, not raw steps. An app sits beside a Grasshopper canvas - app density, not
+     site density. */
+  --ify-app-gutter: var(--ify-space-5);
+  --ify-app-bar-y: var(--ify-space-3);
+  --ify-app-gap: var(--ify-space-4);
+
+  /* Viewport interior (PROVISIONAL - the canvas seed re-skins these four; ify-viewport.js
+     reads nothing else). Aliases today, so the interior follows the theme; the seed
+     replaces the values, not the JS. Round 7 measured the aliased fill and grid within
+     0.02 lightness of each other in both themes - the edge pass gives the contrast floor
+     until the seed lands. */
+  --ify-viewport-ground: var(--ify-surface);
+  --ify-viewport-grid: var(--ify-line);
+  --ify-viewport-mesh: var(--ify-accent-muted);
+  --ify-viewport-edge: var(--ify-accent);
+}
+
+[data-theme="dark"] {
+  --ify-bg: oklch(22% 0.018 200);
+  --ify-surface: oklch(26% 0.018 200);
+  --ify-surface-2: oklch(30% 0.018 200);
+  --ify-ink: oklch(94% 0.010 196);
+  --ify-ink-muted: oklch(76% 0.014 190);
+  --ify-ink-subtle: oklch(64% 0.016 186);
+  --ify-line: oklch(34% 0.018 200);
+  --ify-line-strong: oklch(42% 0.018 200);
+  --ify-accent: oklch(68% 0.080 194);
+  --ify-accent-strong: oklch(76% 0.090 192);
+  --ify-accent-muted: oklch(34% 0.040 198);
+  --ify-on-accent: oklch(20% 0.020 200);
+  --ify-warm: oklch(86% 0.110 74);
+  --ify-warm-strong: oklch(86% 0.110 74);
+  --ify-warm-surface: oklch(32% 0.040 70);
+  --ify-on-warm: oklch(20% 0.030 70);
+  --ify-wire-rest: oklch(63% 0.050 194);
+  --ify-wire-active: var(--ify-accent-strong);
+  --ify-socket: var(--ify-accent);
+  --ify-focus: var(--ify-accent-strong);
+}
+
+/* Auto dark: mirror the dark palette for an OS dark preference when no explicit theme
+   was chosen. The app defaults to data-theme="auto" - it sits beside Rhino on a desktop
+   whose theme the user already picked. */
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] {
+    --ify-bg: oklch(22% 0.018 200);
+    --ify-surface: oklch(26% 0.018 200);
+    --ify-surface-2: oklch(30% 0.018 200);
+    --ify-ink: oklch(94% 0.010 196);
+    --ify-ink-muted: oklch(76% 0.014 190);
+    --ify-ink-subtle: oklch(64% 0.016 186);
+    --ify-line: oklch(34% 0.018 200);
+    --ify-line-strong: oklch(42% 0.018 200);
+    --ify-accent: oklch(68% 0.080 194);
+    --ify-accent-strong: oklch(76% 0.090 192);
+    --ify-accent-muted: oklch(34% 0.040 198);
+    --ify-on-accent: oklch(20% 0.020 200);
+    --ify-warm: oklch(86% 0.110 74);
+    --ify-warm-strong: oklch(86% 0.110 74);
+    --ify-warm-surface: oklch(32% 0.040 70);
+    --ify-on-warm: oklch(20% 0.030 70);
+    --ify-wire-rest: oklch(63% 0.050 194);
+    --ify-wire-active: var(--ify-accent-strong);
+    --ify-socket: var(--ify-accent);
+    --ify-focus: var(--ify-accent-strong);
+  }
+}

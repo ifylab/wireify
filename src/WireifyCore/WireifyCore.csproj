@@ -15,8 +15,8 @@
          is actually loaded after a zip swap. The stamp is baked at COMPILE time into the
          informational version: file times are rewritten by Unblock-File / copies (live-observed),
          so they cannot be the build's identity. Costs one WireifyCore recompile per build. -->
-    <Version>0.2.0</Version>
-    <InformationalVersion>0.2.0+build.$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd-HHmm'))</InformationalVersion>
+    <Version>0.3.0</Version>
+    <InformationalVersion>0.3.0+build.$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd-HHmm'))</InformationalVersion>
     <!-- Keep the stamp clean: the SDK otherwise appends ".<git-sha>" to the metadata. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <NoWarn>NU1701</NoWarn>
@@ -38,7 +38,7 @@
     <!-- build-only: lets net48 cross-compile from macOS/Linux (reference assemblies, no mono) -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <!-- MCP host + tool surface; brings System.Text.Json transitively. netstandard2.0 asset on net48. -->
-    <PackageReference Include="ModelContextProtocol.Core" Version="2.0.0-preview.1" />
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
     <!-- compile-only against the Rhino host; never copied to output (runtime-provided by Rhino) -->
     <PackageReference Include="RhinoCommon" Version="8.0.23304.9001" ExcludeAssets="runtime" />
     <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />

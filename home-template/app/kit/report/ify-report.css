@@ -1,0 +1,143 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* .ify baked-report styles. Embedded whole into the single-file HTML report the app
+   exports; the bake prepends a :root block of LITERAL token values (the capture theme is
+   hard-baked - an auto-theme report with light-ground captures looks broken on dark) and
+   the three @font-face rules with base64 data.
+
+   Deliberately: NO control classes exist here. A report renders recorded values, never
+   widgets - a dead slider pretending to work would be dishonest pixels. */
+
+* { box-sizing: border-box; margin: 0; }
+
+body.ify-report {
+  background: var(--ify-bg);
+  color: var(--ify-ink);
+  font-family: var(--ify-font-text);
+  font-size: var(--ify-text-base);
+  line-height: 1.55;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--ify-space-6) var(--ify-space-5) var(--ify-space-8);
+}
+
+/* The frozen label - impossible to mistake for chrome: the report's one warm band. */
+.ify-report__banner {
+  background: var(--ify-warm-surface);
+  color: var(--ify-on-warm);
+  border: 1px solid var(--ify-warm);
+  border-radius: 6px;
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-xs);
+  padding: var(--ify-space-2) var(--ify-space-3);
+  margin-bottom: var(--ify-space-6);
+}
+
+.ify-report__title {
+  font-family: var(--ify-font-text);
+  font-weight: 500;
+  font-size: var(--ify-text-2xl);
+  letter-spacing: var(--ify-tracking-tight);
+}
+.ify-report__title .ext { color: var(--ify-ink-muted); font-weight: 400; }
+
+.ify-report__meta {
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-muted);
+  margin: var(--ify-space-2) 0 var(--ify-space-7);
+}
+
+.ify-report__section { margin-top: var(--ify-space-7); }
+.ify-report__section > h2 {
+  font-size: var(--ify-text-lg);
+  font-weight: 500;
+  letter-spacing: var(--ify-tracking-tight);
+  display: flex;
+  align-items: center;
+  gap: var(--ify-space-3);
+  margin-bottom: var(--ify-space-4);
+}
+.ify-report__section > h2::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--ify-line);
+}
+
+.ify-report table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--ify-text-sm);
+}
+.ify-report th {
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-xs);
+  font-weight: 400;
+  color: var(--ify-ink-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--ify-line-strong);
+  padding: var(--ify-space-1) var(--ify-space-3) var(--ify-space-1) 0;
+}
+.ify-report td {
+  border-bottom: 1px solid var(--ify-line);
+  padding: var(--ify-space-2) var(--ify-space-3) var(--ify-space-2) 0;
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+.ify-report td.num { font-family: var(--ify-font-mono); font-size: var(--ify-text-sm); }
+
+.ify-report__swatch {
+  display: inline-block;
+  inline-size: 0.9em;
+  block-size: 0.9em;
+  border: 1px solid var(--ify-line-strong);
+  border-radius: 3px;
+  vertical-align: -0.1em;
+  margin-right: var(--ify-space-1);
+}
+
+/* Carried-over chart SVGs. The marks carry no presentation attributes (their colour is
+   CSS in the live app), so the bake's stylesheet must style them itself or every rect
+   falls back to SVG's default fill - solid black on the deliverable (round-5 S5.9d).
+   Kept in lockstep with the .ify-chart rules in ify-app.css; the tokens they reference
+   are hard-baked into the report's :root. */
+.ify-report svg { display: block; width: 100%; height: auto; }
+.ify-report svg text {
+  font-family: var(--ify-font-label);
+  font-size: 10px;
+  fill: var(--ify-ink-muted);
+}
+.ify-report .ify-chart__grid { stroke: var(--ify-line); }
+.ify-report .ify-chart__mark { fill: var(--ify-accent); stroke: none; }
+.ify-report .ify-chart__stroke { fill: none; stroke: var(--ify-accent); stroke-width: 1.5; }
+
+.ify-report figure { margin: 0 0 var(--ify-space-5); }
+.ify-report figure > img, .ify-report figure > svg { max-width: 100%; display: block; }
+.ify-report figure > img {
+  border: 1px solid var(--ify-line);
+  border-radius: 6px;
+}
+.ify-report figcaption {
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-muted);
+  margin-top: var(--ify-space-2);
+}
+
+.ify-report__warn {
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-muted);
+}
+
+.ify-report__foot {
+  margin-top: var(--ify-space-8);
+  border-top: 1px solid var(--ify-line);
+  padding-top: var(--ify-space-3);
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ify-space-4);
+  flex-wrap: wrap;
+}

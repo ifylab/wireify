@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 using System;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -41,13 +42,47 @@ public class WireifyConnectorTests
         return dir;
     }
 
+    // The connector's preflight is injected: the tests must not depend on whether the machine
+    // running them has Claude Code on PATH (CI does not).
+    static PreflightResult ClaudeFound() => new(true, "/usr/local/bin/claude", null);
+    static PreflightResult ClaudeMissing() => Preflight.CheckClaude(pathEnv: "", windows: false);
+
+    [Fact]
+    public void No_claude_cli_means_no_terminal_and_a_failed_terminal_step_that_names_the_way_back()
+    {
+        // Round-11 S11.31/S11.32: the terminal opened anyway, printed "'claude' is not
+        // recognized" and idled, while the panel called the terminal step ok.
+        var root = TempRoot();
+        var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
+        var launcher = new RecordingLauncher();
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), launcher, ClaudeMissing);
+        using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
+        host.Start(54070);
+
+        var result = connector.Connect("/projects/tower.gh", host);
+
+        Assert.Null(launcher.Launched);
+        Assert.False(result.TerminalLaunched);
+        Assert.False(result.Preflight.ClaudeFound);
+        var preflight = Assert.Single(result.Steps, s => s.Kind == "preflight");
+        Assert.False(preflight.Ok);
+        Assert.Equal("[claude]", preflight.Scope);
+        var terminal = Assert.Single(result.Steps, s => s.Kind == "terminal");
+        Assert.False(terminal.Ok);
+        Assert.Contains("terminal not launched", terminal.Message);
+        Assert.Contains("Build again", terminal.Message);
+        // The home is still scaffolded and the config merged: installing the CLI is the only
+        // thing left, and the next Build finds everything in place.
+        Assert.True(File.Exists(Path.Combine(result.HomeDir, "CLAUDE.md")));
+    }
+
     [Fact]
     public void Connect_scaffolds_home_writes_config_trusts_and_launches()
     {
         var root = TempRoot();
         var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
         var launcher = new RecordingLauncher();
-        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), launcher);
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), launcher, ClaudeFound);
 
         using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
         host.Start(54000);
@@ -75,6 +110,52 @@ public class WireifyConnectorTests
         var trustKey = Path.GetFullPath(result.HomeDir).Replace('\\', '/');
         var claude = JsonNode.Parse(File.ReadAllText(paths.ClaudeJson))!.AsObject();
         Assert.True((bool)claude["projects"]![trustKey]!["hasTrustDialogAccepted"]!);
+    }
+
+    [Fact]
+    public void Connect_appends_app_lines_to_the_steps_and_the_connect_log()
+    {
+        // Round-5 S5.0e (repeating S4.17): the app line printed AFTER the connector had
+        // written connect-*.log, so the log always ended at "terminal launched" and only the
+        // connected home ever got a line. The lines now flow through the step list itself.
+        var root = TempRoot();
+        var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher(), ClaudeFound);
+        using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
+        host.Start(54040);
+
+        string? seenHomeDir = null;
+        var result = connector.Connect("/projects/tower.gh", host, appLines: homeDir =>
+        {
+            seenHomeDir = homeDir;
+            return new[]
+            {
+                "app: http://127.0.0.1:1/app/a/?token=t",
+                "app: http://127.0.0.1:1/app/b/?token=u (no page yet — ask the agent to run scaffold_app)",
+            };
+        });
+
+        Assert.Equal(result.HomeDir, seenHomeDir);
+        Assert.Equal(2, result.Steps.Count(s => s.Message.StartsWith("app: ")));
+        var log = Directory.GetFiles(Path.Combine(root, "logs"), "connect-*.log").Single();
+        var text = File.ReadAllText(log);
+        Assert.Contains("app: http://127.0.0.1:1/app/a/", text);
+        Assert.Contains("no page yet", text);
+    }
+
+    [Fact]
+    public void Connect_survives_a_throwing_app_line_provider()
+    {
+        var root = TempRoot();
+        var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher(), ClaudeFound);
+        using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
+        host.Start(54045);
+
+        var result = connector.Connect("/projects/tower.gh", host,
+            appLines: _ => throw new InvalidOperationException("boom"));
+
+        Assert.Contains(result.Steps, s => s.Message.Contains("app link lookup failed"));
     }
 
     [Fact]
@@ -121,7 +202,7 @@ public class WireifyConnectorTests
     {
         var root = TempRoot();
         var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
-        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher());
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher(), ClaudeFound);
 
         using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
         host.Start(54200);
@@ -166,7 +247,7 @@ public class WireifyConnectorTests
     {
         var root = TempRoot();
         var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
-        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher());
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new RecordingLauncher(), ClaudeFound);
 
         using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "sekret");
         host.Start(54300);
@@ -199,7 +280,7 @@ public class WireifyConnectorTests
         // End to end: the .mcp.json the user's Claude will read must actually reach a working server.
         var root = TempRoot();
         var paths = new WireifyPaths(root, Path.Combine(root, "claude.json"));
-        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new NullTerminalLauncher());
+        var connector = new WireifyConnector(paths, new HomeScaffolder(TemplateRoot()), new NullTerminalLauncher(), ClaudeFound);
 
         using var host = new WireifyMcpHost(new WireifyTools(new FakeBridge()), "live-secret");
         host.Start(54100);

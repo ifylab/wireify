@@ -32,6 +32,11 @@ namespace WireifyCore.Connect
             {
                 ["type"] = "http",
                 ["url"] = $"http://127.0.0.1:{port}/mcp",
+                // Ten minutes per call: heavy solves ride this instead of the dropped MCP task
+                // machinery. It must live HERE — this entry replaces the whole "wireify" object
+                // on every Connect, so a timeout only in the (never-rendered) template reaches
+                // no home at all.
+                ["request_timeout_ms"] = 600000,
                 ["headers"] = headers,
             };
         }

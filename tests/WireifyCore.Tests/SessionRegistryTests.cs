@@ -51,7 +51,7 @@ public class SessionRegistryTests
         registry.MarkAuthenticated("tower-a1b2c3d4");
         registry.MarkAuthenticated("facade-99887766");
 
-        Assert.Equal("tower.gh", registry.HandleExit(towerTerminal));
+        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 0), registry.HandleExit(towerTerminal));
 
         Assert.Equal(WireifyConnectionState.ServerListening, registry.StateFor(@"C:\proj\tower.gh"));
         Assert.Equal(WireifyConnectionState.Connected, registry.StateFor(@"C:\proj\facade.gh")); // untouched
@@ -62,15 +62,68 @@ public class SessionRegistryTests
     }
 
     [Fact]
-    public void A_superseded_terminal_handle_is_ignored()
+    public void A_session_stays_live_until_its_last_terminal_closes()
+    {
+        // Round-9 S9.7: with two terminals open, closing the NEWER one read Build while the older
+        // still answered MCP calls — and the click spawned a third. Any live terminal = live.
+        var registry = new SessionRegistry();
+        var first = new FakeHandle();
+        var second = new FakeHandle();
+        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), first, launched: true);
+        registry.MarkAuthenticated("tower-a1b2c3d4");
+        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), second, launched: true);
+
+        // The second launch does not un-connect a session whose first terminal authenticated.
+        Assert.Equal(WireifyConnectionState.Connected, registry.StateFor(@"C:\proj\tower.gh"));
+
+        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 1), registry.HandleExit(second));
+        Assert.Equal(WireifyConnectionState.Connected, registry.StateFor(@"C:\proj\tower.gh")); // first still open
+
+        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 0), registry.HandleExit(first));
+        Assert.Equal(WireifyConnectionState.ServerListening, registry.StateFor(@"C:\proj\tower.gh"));
+
+        Assert.Null(registry.HandleExit(first)); // already forgotten — nothing to demote twice
+        Assert.Null(registry.HandleExit(new FakeHandle())); // never tracked
+    }
+
+    [Fact]
+    public void A_fresh_terminal_after_all_closed_re_arms_the_connected_transition()
     {
         var registry = new SessionRegistry();
-        var oldTerminal = new FakeHandle();
-        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), oldTerminal, launched: true);
-        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), new FakeHandle(), launched: true);
+        var first = new FakeHandle();
+        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), first, launched: true);
+        registry.MarkAuthenticated("tower-a1b2c3d4");
+        registry.HandleExit(first);
 
-        Assert.Null(registry.HandleExit(oldTerminal)); // the re-Connect owns the session now
+        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), new FakeHandle(), launched: true);
         Assert.Equal(WireifyConnectionState.TerminalLaunched, registry.StateFor(@"C:\proj\tower.gh"));
+        Assert.Equal("tower.gh", registry.MarkAuthenticated("tower-a1b2c3d4"));
+    }
+
+    [Fact]
+    public void Repath_moves_a_live_session_to_the_saved_as_path()
+    {
+        // Round-9 S9.13: after a Save As the session is keyed to the document instance while
+        // the home is keyed to the path. The session follows the file the user is looking at;
+        // the old path honestly reads Build.
+        var registry = new SessionRegistry();
+        var docId = Guid.NewGuid();
+        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", docId, new FakeHandle(), launched: true);
+
+        Assert.Equal("tower-v2.ghx", registry.Repath(@"C:\proj\tower.gh", @"C:\proj\tower-v2.ghx"));
+
+        Assert.Equal(WireifyConnectionState.TerminalLaunched, registry.StateFor(@"C:\proj\tower-v2.ghx"));
+        Assert.Equal(WireifyConnectionState.ServerStopped, registry.StateFor(@"C:\proj\tower.gh"));
+        // The binding keeps the instance id (the terminal was launched for it) under the home.
+        Assert.Equal(docId, registry.Binding("tower-a1b2c3d4")!.DocumentId);
+        Assert.Equal(@"C:\proj\tower-v2.ghx", registry.Binding("tower-a1b2c3d4")!.GhPath);
+
+        // Idempotent and quiet: a second call for the same rename, a first save (no old path),
+        // or a path nobody registered all return null.
+        Assert.Null(registry.Repath(@"C:\proj\tower.gh", @"C:\proj\tower-v2.ghx"));
+        Assert.Null(registry.Repath(null, @"C:\proj\new.gh"));
+        Assert.Null(registry.Repath(@"C:\proj\other.gh", @"C:\proj\other-2.gh"));
+        Assert.Null(registry.Repath(@"C:\proj\tower-v2.ghx", @"C:\proj\tower-v2.ghx"));
     }
 
     [Fact]

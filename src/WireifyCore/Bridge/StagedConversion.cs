@@ -74,8 +74,11 @@ namespace WireifyCore.Bridge
         /// Validate the explicit I/O specs for a conversion against the staged input names.
         /// Rules: outputs required, unique, valid access; inputs (when given) must cover every
         /// staged name exactly once (case-insensitive; the result carries the staged casing) with
-        /// no extras; no name may appear as both input and output. On any violation the Error is
-        /// set and the caller must make NO document changes.
+        /// no extras; no FINAL name may appear as both input and output. An input's optional
+        /// <c>RenameTo</c> is the final variable name (the staged/current name stays the match
+        /// key so the wire carries across) — final names must be unique; outputs never take
+        /// RenameTo (their Name is already free). On any violation the Error is set and the
+        /// caller must make NO document changes.
         /// </summary>
         public static ValidatedIo ValidateIo(
             IReadOnlyList<string> stagedNames,
@@ -95,6 +98,8 @@ namespace WireifyCore.Bridge
             foreach (var o in outputs)
             {
                 if (string.IsNullOrWhiteSpace(o.Name)) return Fail("an output has an empty name.");
+                if (!string.IsNullOrWhiteSpace(o.RenameTo))
+                    return Fail($"output '{o.Name.Trim()}' carries renameTo — outputs take their name from Name directly; renameTo is for inputs, whose Name must keep matching the staged/current param.");
                 if (!outNames.Add(o.Name.Trim())) return Fail($"duplicate output name '{o.Name.Trim()}'.");
                 var access = ParseAccess(o.Access) ?? (string.IsNullOrWhiteSpace(o.Access) ? "item" : null);
                 if (access is null) return Fail($"output '{o.Name.Trim()}' has invalid access '{o.Access}' (use item, list, or tree).");
@@ -126,16 +131,34 @@ namespace WireifyCore.Bridge
                         return Fail($"inputs must cover every staged input; '{staged}' is missing. Staged inputs: [{string.Join(", ", stagedNames)}].");
                     var access = ParseAccess(spec.Access) ?? (string.IsNullOrWhiteSpace(spec.Access) ? "item" : null);
                     if (access is null) return Fail($"input '{staged}' has invalid access '{spec.Access}' (use item, list, or tree).");
-                    normalizedInputs.Add(new IoParamSpec(staged, access, NormalizeHint(spec.TypeHint)));
+                    // A rename equal to the staged name is a no-op, normalized away; whitespace
+                    // is a mistake worth naming rather than a silent un-rename.
+                    string? rename = null;
+                    if (spec.RenameTo is not null)
+                    {
+                        if (string.IsNullOrWhiteSpace(spec.RenameTo))
+                            return Fail($"input '{staged}' has an empty renameTo — omit it, or give the final variable name.");
+                        rename = spec.RenameTo.Trim();
+                        if (string.Equals(rename, staged, StringComparison.OrdinalIgnoreCase)) rename = null;
+                    }
+                    normalizedInputs.Add(new IoParamSpec(staged, access, NormalizeHint(spec.TypeHint), rename));
                     byStagedName.Remove(staged);
                 }
                 if (byStagedName.Count > 0)
                     return Fail($"inputs name(s) not staged on the socket: [{string.Join(", ", byStagedName.Keys)}]. Staged inputs: [{string.Join(", ", stagedNames)}].");
             }
 
+            // Uniqueness and the input/output collision are judged on FINAL names — what the
+            // script and the canvas will actually carry.
+            var finalNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var i in normalizedInputs)
-                if (outNames.Contains(i.Name))
-                    return Fail($"'{i.Name}' is declared as both input and output — script variables must be unique.");
+            {
+                var final = i.RenameTo ?? i.Name;
+                if (!finalNames.Add(final))
+                    return Fail($"duplicate final input name '{final}' — renames must not collide with each other or with kept names.");
+                if (outNames.Contains(final))
+                    return Fail($"'{final}' is declared as both input and output — script variables must be unique.");
+            }
 
             return new ValidatedIo(normalizedInputs, normalizedOutputs, null);
         }

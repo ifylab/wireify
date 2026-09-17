@@ -43,8 +43,11 @@ namespace WireifyCore.Hosting
         // for that definition's socket/panel, terminal liveness per session — so a second open
         // definition never reads (or mutates) another file's session.
         readonly SessionRegistry _sessions = new();
+        // The last Build's steps per definition, for a panel opened after the fact (S10.5).
+        readonly StepLedger _steps = new();
 
         WireifyMcpHost? _host;
+        AppSurface? _appSurface;
         WireifyConnectionState _serverState = WireifyConnectionState.ServerStopped;
         bool _loggedLegacyAuth;
 
@@ -98,7 +101,68 @@ namespace WireifyCore.Hosting
             get { lock (_gate) return _log.ToArray(); }
         }
 
+        public IReadOnlyList<WireifyConnectStep> RecentStepsFor(string? ghFilePath) => _steps.For(ghFilePath);
+
         public string LogsDirectory => new WireifyPaths().LogsDir;
+
+        // The socket asks on every repaint; the answer is three file-system checks, so it is
+        // held for a moment per path and dropped whenever this process changes the answer
+        // (a scaffold, a Connect) — a click always re-reads.
+        readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, WireifyAppStatus Status)> _appStatus =
+            new(StringComparer.OrdinalIgnoreCase);
+        static readonly TimeSpan AppStatusTtl = TimeSpan.FromSeconds(2);
+
+        public WireifyAppStatus AppStatusFor(string? ghFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(ghFilePath)) return WireifyAppStatus.None;
+            var key = ghFilePath!;
+            if (_appStatus.TryGetValue(key, out var hit) && DateTime.UtcNow - hit.At < AppStatusTtl) return hit.Status;
+            int port;
+            bool listening;
+            lock (_gate)
+            {
+                port = _host?.Port ?? 0;
+                listening = _host?.IsListening ?? false;
+            }
+            var status = AppStatusResolver.Compute(new WireifyPaths(), key, port, listening);
+            _appStatus[key] = (DateTime.UtcNow, status);
+            return status;
+        }
+
+        void ForgetAppStatus() => _appStatus.Clear();
+
+        public string? AppLinkFor(string? ghFilePath)
+        {
+            var status = AppStatusFor(ghFilePath);
+            if (!status.PageExists) return null;
+            AppSurface? surface;
+            lock (_gate) surface = _appSurface;
+            var info = surface?.Describe(status.HomeId);
+            return info is { HomeExists: true } ? info.Url : null;
+        }
+
+        public WireifyConnectStep OpenApp(string? ghFilePath)
+        {
+            ForgetAppStatus();
+            var status = AppStatusFor(ghFilePath);
+            if (!status.PageExists)
+                return new WireifyConnectStep("[wireify]", status.Reason, false, "app");
+            try
+            {
+                EnsureServer();
+                var url = AppLinkFor(ghFilePath)
+                    ?? throw new InvalidOperationException("the app surface holds no link for this home");
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+                Log("[wireify]", $"app: opened {status.HomeId} in the browser", true);
+                return new WireifyConnectStep("[wireify]", "app opened in the browser", true, "app");
+            }
+            catch (Exception ex)
+            {
+                Log("[wireify]", $"app: could not open the browser for {status.HomeId}: {ex.Message}", false);
+                return new WireifyConnectStep("[wireify]",
+                    "could not open the browser — copy the link instead (right-click the socket)", false, "app");
+            }
+        }
 
         public WireifyServerInfo EnsureServer()
         {
@@ -122,8 +186,37 @@ namespace WireifyCore.Hosting
                         // entry too, so a call that never returns is visible in a post-mortem.
                         entryLog: tool => _sessionLog.Append(
                             new WireifyLogLine(DateTime.Now, "[wireify]", $"→ {tool}", true)));
-                    var tools = new WireifyTools(bridge, OnToolActivity);
-                    _host = new WireifyMcpHost(tools, secret);
+                    // The companion-app surface rides the same listener: statics + the app API
+                    // per home, gated by per-home per-run tokens (never the MCP secret).
+                    var appPaths = new WireifyPaths();
+                    var surface = new AppSurface(
+                        homeId =>
+                        {
+                            var dir = Path.Combine(appPaths.ProjectsDir, homeId);
+                            return Directory.Exists(dir) ? dir : null;
+                        },
+                        bridge,
+                        (message, ok) => Log("[wireify]", message, ok));
+                    _appSurface = surface;
+                    var tools = new WireifyTools(bridge, OnToolActivity, surface.Describe,
+                        (homeId, template) =>
+                        {
+                            var dir = Path.Combine(appPaths.ProjectsDir, homeId);
+                            if (!Directory.Exists(dir))
+                                throw new InvalidOperationException($"no home '{homeId}' on this server.");
+                            var report = AppKitScaffolder.Scaffold(ResolveTemplateRoot(), dir, template);
+                            // The socket's Open app capsule keys on the page's existence: drop the
+                            // cached answer and nudge a repaint so it flips the moment the page exists.
+                            ForgetAppStatus();
+                            StateChanged?.Invoke(State);
+                            var info = surface.Describe(homeId);
+                            return new ScaffoldAppResult(
+                                info.HomeExists, info.Url, info.AppDirExists, info.ManifestPresent,
+                                info.Controls, info.Views,
+                                report.Seeded, report.Skipped, KitStamped: true, report.Template,
+                                info.ManifestError, info.ManifestWarnings);
+                        });
+                    _host = new WireifyMcpHost(tools, secret, surface);
                     _host.AuthenticatedRequest += OnAuthenticatedRequest;
                     _host.Start(WireifyIds.DefaultPort);
                     if (_serverState == WireifyConnectionState.ServerStopped) _serverState = WireifyConnectionState.ServerListening;
@@ -138,6 +231,10 @@ namespace WireifyCore.Hosting
                 // The build identity leads the line: after a zip swap this is the ten-second
                 // proof of which build actually loaded (the round-17 stale-install lesson).
                 Log("[wireify]", $"Wireify {info.Build} — MCP server listening on {info.Url}", true);
+                // Tokens are per home and never logged wholesale — each home's link prints at
+                // its Connect, and get_app_info hands the agent the same URL on ask.
+                if (_appSurface is not null)
+                    Log("[wireify]", $"webapp surface: /app/<home-id>/ on port {info.Port} — per-home links from the Build line, a socket's Open app, or get_app_info", true);
                 foreach (var warning in InstallLocations.Warnings(
                     typeof(WireifyController).Assembly.Location, InstallLocations.ExistingRoots()))
                     Log("[wireify]", warning, false);
@@ -166,12 +263,15 @@ namespace WireifyCore.Hosting
                     });
                     if (!hasDoc)
                         return Refuse(server.Port, "no active Grasshopper definition",
-                            "Open a Grasshopper definition, then Connect again.");
+                            "Open a Grasshopper definition, then Build again.");
                     if (string.IsNullOrEmpty(activePath))
                         return Refuse(server.Port, "the definition is unsaved",
-                            "Wireify keys the agent home to the .gh file path. Save the definition, then Connect again.");
+                            "Wireify keys the agent home to the .gh file path. Save the definition, then Build again.");
                     path = activePath;
                 }
+
+                // Every step this Build raises is kept for the panel, whoever pressed Build.
+                using var recording = _steps.Begin(path!);
 
                 WireifyMcpHost host;
                 lock (_gate) host = _host!;
@@ -180,7 +280,10 @@ namespace WireifyCore.Hosting
                     new WireifyPaths(),
                     new HomeScaffolder(ResolveTemplateRoot()),
                     _launcher);
-                var result = connector.Connect(path!, host, OnConnectStep);
+                // App lines ride the connector's own step list so they land in the console AND
+                // the connect-*.log file — the controller-side raise after Connect() returned
+                // is why the log always ended at "terminal launched" (round-5 S5.0e, S4.17).
+                var result = connector.Connect(path!, host, OnConnectStep, BuildAppLines);
 
                 // Register (or refresh) this definition's session: the document binding routes
                 // its tool calls, the per-session state drives ITS sockets only. Registered even
@@ -190,6 +293,7 @@ namespace WireifyCore.Hosting
                 {
                     var homeId = Path.GetFileName(result.HomeDir);
                     _sessions.Register(homeId, path!, FindOpenDocumentId(path!), result.Terminal, result.TerminalLaunched);
+                    ForgetAppStatus(); // the home exists now — the socket's plate re-reads
                     if (result.Terminal is { } handle)
                     {
                         handle.Exited += () => OnSessionTerminalExited(handle);
@@ -200,6 +304,14 @@ namespace WireifyCore.Hosting
 
                 var success = result.Steps.All(s => s.Ok);
                 var hint = BuildHint(result);
+                // The failure hint reaches the panel log, the connect log, and the command line
+                // whoever pressed Build: the plate shows its first three segments, and the long
+                // form (every platform, the plan requirement) existed on no channel when the
+                // socket drove the Build (round-11 S11.31).
+                // The socket and the command each echo the hint to the command line already;
+                // the Log line is what reaches the panel log and the connect log.
+                if (!success && hint is { Length: > 0 })
+                    Log("[claude]", hint, false);
                 return new WireifyConnectReport(
                     success, result.Port, result.HomeDir, result.McpConfigPath,
                     result.Preflight.ClaudeFound, result.TerminalLaunched,
@@ -253,6 +365,7 @@ namespace WireifyCore.Hosting
         /// only ever landed in connect-*.log cost two test rounds before anyone saw it.</summary>
         void RaiseConnectStep(WireifyConnectStep step)
         {
+            _steps.Record(step);
             ConnectStepCompleted?.Invoke(step);
             Log(step.Scope, step.Message, step.Ok);
             try { Rhino.RhinoApp.WriteLine($"{step.Scope} {(step.Ok ? "ok " : "ERR")} {step.Message}"); }
@@ -337,20 +450,95 @@ namespace WireifyCore.Hosting
             Log("[wireify]", $"Claude connected ({file})", true);
         }
 
-        /// <summary>A session's terminal closed: demote THAT session to ServerListening so ITS
-        /// definition's sockets read Connect again and its auth transition re-arms — other
-        /// definitions' sessions are untouched. A superseded handle (the session re-Connected)
-        /// is ignored.</summary>
+        /// <summary>A session's terminal closed. Only the LAST open terminal demotes the session
+        /// (its definition's sockets read Build again, the auth transition re-arms) — with another
+        /// terminal still open the session stays live and the log says so (round-9 S9.7). Other
+        /// definitions' sessions are untouched.</summary>
         void OnSessionTerminalExited(ITerminalHandle handle)
         {
-            var file = _sessions.HandleExit(handle);
+            var exit = _sessions.HandleExit(handle);
+            if (exit is null) return;
+            StateChanged?.Invoke(State);
+            Log("[wireify]", exit.Remaining > 0
+                ? $"a Claude terminal closed ({exit.FileName}) — {exit.Remaining} still open for it; the session stays live"
+                : $"Claude terminal closed ({exit.FileName}) — Build (or right-click a socket: New Claude session) opens a new one", true);
+        }
+
+        public void ActiveDefinitionChanged()
+        {
+            ForgetAppStatus();
+            StateChanged?.Invoke(State);
+        }
+
+        public void DefinitionRenamed(string? oldPath, string? newPath)
+        {
+            ForgetAppStatus();
+            var file = _sessions.Repath(oldPath, newPath);
             if (file is null) return;
             StateChanged?.Invoke(State);
-            Log("[wireify]", $"Claude terminal closed ({file}) — Connect (or right-click a socket) launches a new one", true);
+            var oldName = Path.GetFileName(oldPath ?? "");
+            Log("[wireify]",
+                $"definition saved as {file} — its Claude session follows the file; the home and any app page stay with {oldName} (a home is keyed to the .gh path)", true);
         }
 
         /// <summary>The open document whose file path matches — its id makes the session binding
         /// survive a mid-session SaveAs (the path alone would go stale until the next Connect).</summary>
+        /// <summary>The app lines a Connect prints AND logs (they flow through the connector's
+        /// step list): the connected home's link first, then every OTHER registered session whose
+        /// definition is still open — a Connect on one home must not leave the console blind to
+        /// the other homes' running apps (round-5 S5.0e, the S4.17 repeat). Links rotate per run,
+        /// so a token in the connect log is dead the moment Rhino restarts — by design. The
+        /// closing browser-check line states only what the HOME's settings allow, never a claim
+        /// about Chrome itself.</summary>
+        IReadOnlyList<string> BuildAppLines(string homeDir)
+        {
+            AppSurface? surface;
+            lock (_gate) surface = _appSurface;
+            if (surface is null) return Array.Empty<string>();
+
+            var lines = new List<string>();
+            void AddLine(string homeId, string dir)
+            {
+                var url = surface.Describe(homeId).Url;
+                lines.Add(File.Exists(Path.Combine(dir, "app", "index.html"))
+                    ? $"app: {url}"
+                    : $"app: {url} (no page yet — ask the agent to run scaffold_app)");
+            }
+
+            var connectedId = Path.GetFileName(homeDir);
+            AddLine(connectedId, homeDir);
+
+            var projectsDir = Path.GetDirectoryName(homeDir);
+            if (projectsDir is not null)
+            {
+                foreach (var (homeId, ghPath) in _sessions.ActiveSessions())
+                {
+                    if (string.Equals(homeId, connectedId, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (FindOpenDocumentId(ghPath) == Guid.Empty) continue; // closed definitions serve nothing
+                    AddLine(homeId, Path.Combine(projectsDir, homeId));
+                }
+            }
+
+            if (HomeAllowsBrowserTools(homeDir))
+                lines.Add("browser check: this home's settings allow Claude to verify the app in Chrome (see app/kit/KIT.md)");
+            return lines;
+        }
+
+        /// <summary>Whether the home's scaffolded settings pre-allow the Claude-in-Chrome
+        /// verification toolset. A deterministic read of OUR OWN template output — detecting the
+        /// Chrome extension or the client's integration state would be client-internals guessing
+        /// (the B1 drift class), so the line this gates only ever describes the settings.</summary>
+        static bool HomeAllowsBrowserTools(string homeDir)
+        {
+            try
+            {
+                var settings = Path.Combine(homeDir, ".claude", "settings.json");
+                return File.Exists(settings)
+                    && File.ReadAllText(settings).Contains("mcp__claude-in-chrome__");
+            }
+            catch { return false; }
+        }
+
         Guid FindOpenDocumentId(string ghFilePath) => _ui.Invoke(() =>
         {
             var server = Instances.DocumentServer;
@@ -377,9 +565,7 @@ namespace WireifyCore.Hosting
         static string? BuildHint(ConnectResult result)
         {
             if (!result.Preflight.ClaudeFound)
-                return "Claude Code CLI not found. Install it — macOS: curl -fsSL https://claude.ai/install.sh | bash — "
-                     + "Windows (PowerShell): irm https://claude.ai/install.ps1 | iex — then run claude once and sign in. "
-                     + "Requires a Pro/Max/Team/Enterprise plan or a Console API account; free claude.ai accounts cannot run Claude Code.";
+                return ConnectHints.ClaudeMissing();
             if (!result.TerminalLaunched)
                 return $"The terminal could not be opened. Open one yourself in {result.HomeDir} and run: claude";
             return "First time on this definition: approve the 'wireify' MCP server when Claude asks (one keypress). "

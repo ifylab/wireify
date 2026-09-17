@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Grasshopper.Kernel;
@@ -63,7 +64,33 @@ namespace WireifyGh
             // The socket computes nothing (its params collect VolatileData, so read_input_data
             // works before any code exists) — but staging is the one moment Wireify can warn the
             // USER about clipped text, so scan a bounded prefix of each wired input for it.
+            SettleNumber();
             WarnOnClippedText();
+        }
+
+        /// <summary>Two objects must never carry one number — "do #n" is resolved by number
+        /// client-side, so a duplicate can convert the wrong socket. A number is settled at
+        /// SOLVE time, after whatever transaction added the socket has completed: the first
+        /// holder in document order keeps it, a later one (a paste, round-12 S12.13) takes the
+        /// next free number. A socket re-added by undoing its own conversion solves after the
+        /// converted component is gone, so it keeps its number (round-11 B85). The earlier
+        /// "re-check on the next idle beat" never ran on the paste path.</summary>
+        void SettleNumber()
+        {
+            var doc = OnPingDocument();
+            if (doc is null || _number <= 0) return;
+            foreach (var obj in doc.Objects)
+            {
+                if (ReferenceEquals(obj, this)) return; // the first holder keeps it
+                var other = obj is WireifySocketComponent socket ? socket._number
+                    : obj is IGH_Component comp && WireifyIds.TryParseNumber(comp.NickName, out var n) ? n
+                    : 0;
+                if (other != _number) continue;
+                _number = NextFreeNumber(doc);
+                NickName = WireifyIds.MakeNickname(_number);
+                Repaint();
+                return;
+            }
         }
 
         /// <summary>Orange-balloon warning when a staged input carries text at exactly the panel
@@ -100,9 +127,42 @@ namespace WireifyGh
         public override void AddedToDocument(GH_Document document)
         {
             base.AddedToDocument(document);
-            if (_number <= 0 || NumberTaken(document, _number))
+            // A persisted number is kept as it is: a socket re-added by an undo arrives while the
+            // converted W<n> component still holds the number for a moment (round-11 S11.39),
+            // and a paste arrives beside the socket it was copied from (round-12 S12.13). Both
+            // settle at the next solve (SettleNumber), after the transaction that added them.
+            if (_number <= 0)
                 _number = NextFreeNumber(document);
             NickName = WireifyIds.MakeNickname(_number);
+            document.FilePathChanged -= OnFilePathChanged;
+            document.FilePathChanged += OnFilePathChanged;
+        }
+
+        public override void RemovedFromDocument(GH_Document document)
+        {
+            document.FilePathChanged -= OnFilePathChanged;
+            base.RemovedFromDocument(document);
+        }
+
+        /// <summary>Save As splits "the definition" in two: the home (and any app page) stays with
+        /// the OLD path, the live session follows this document instance to the new one. The
+        /// plate tracked the split silently before (round-9 S9.13); now it says so, and the
+        /// controller moves the session so both files read honestly (Session open here, Build
+        /// on the old path). A first save (no old path) just refreshes the plate.</summary>
+        void OnFilePathChanged(object sender, GH_DocFilePathEventArgs e)
+        {
+            var oldPath = e.OldFilePath ?? "";
+            var newPath = e.NewFilePath ?? "";
+            WireifyGhRuntime.DefinitionRenamed(oldPath, newPath);
+            if (oldPath.Length > 0 && newPath.Length > 0
+                && !string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase)
+                && WireifyGhRuntime.AppStatusFor(oldPath).PageExists)
+            {
+                Flash($"saved under a new name — the app stays with {Path.GetFileName(oldPath)}; Build here starts a new one",
+                    warm: true, ms: 8000);
+                return;
+            }
+            Repaint();
         }
 
         bool NumberTaken(GH_Document document, int number)
@@ -143,35 +203,148 @@ namespace WireifyGh
             return base.Read(reader);
         }
 
-        // --- button ----------------------------------------------------------------------------
+        // --- the plate: Build / Open app + the message lines ------------------------------------
 
-        internal string ButtonLabel
+        // Build-flow residue shown on the plate: the running step while the flow runs, the
+        // failure + hint after a failed run (until the next Build click), and a short-lived
+        // line for clicks ("link copied"). Live state only — never written into the file.
+        bool _building;
+        string _buildError = "";
+        string _buildHint = "";
+        string _transient = "";
+        bool _transientWarm;
+        DateTime _transientUntil;
+
+        string? DocPath => OnPingDocument()?.FilePath;
+
+        /// <summary>The plate's copy for this paint, composed from live state (per document:
+        /// THIS definition's session decides — a fresh second file honestly reads Build instead
+        /// of inheriting another file's live terminal).</summary>
+        internal SocketText Text
         {
             get
             {
-                if (WireifyGhRuntime.IsActive(InstanceGuid)) return "Working";
-                // Short enough to never clip in the capsule (live round: "Ready - do #1" truncated).
-                // Per-document: THIS definition's session decides — a fresh second file honestly
-                // reads Connect instead of inheriting another file's live terminal.
-                return WireifyGhRuntime.StateFor(OnPingDocument()?.FilePath) >= WireifyConnectionState.TerminalLaunched
-                    ? $"do #{_number}"
-                    : "Connect";
+                var path = DocPath;
+                var names = new string[Params.Input.Count];
+                var wired = new bool[Params.Input.Count];
+                for (var i = 0; i < Params.Input.Count; i++)
+                {
+                    names[i] = Params.Input[i].NickName ?? "";
+                    wired[i] = Params.Input[i].SourceCount > 0;
+                }
+                return SocketCopy.Compose(new SocketView
+                {
+                    Number = _number,
+                    InputNames = names,
+                    InputWired = wired,
+                    SessionOpen = WireifyGhRuntime.StateFor(path) >= WireifyConnectionState.TerminalLaunched,
+                    Building = _building,
+                    BuildStep = _building ? StepPhrase(WireifyGhRuntime.LastStep) : "",
+                    BuildError = _buildError,
+                    BuildHint = _buildHint,
+                    App = WireifyGhRuntime.AppStatusFor(path),
+                    Transient = DateTime.Now < _transientUntil ? _transient : "",
+                    TransientWarm = _transientWarm,
+                });
             }
         }
 
-        internal void OnButtonClick()
+        static string StepPhrase(WireifyConnectStep? step)
         {
-            if (WireifyGhRuntime.StateFor(OnPingDocument()?.FilePath) >= WireifyConnectionState.TerminalLaunched)
+            if (step is null) return "";
+            switch (step.Kind)
             {
-                TryOpenPanel();
+                case "server": return "starting the local server";
+                case "home": return "preparing this file's home";
+                case "config": return "writing the MCP config";
+                case "preflight": return "checking Claude Code";
+                case "terminal": return "opening the terminal";
+                default: return StripScope(step.Message);
+            }
+        }
+
+        internal void OnBuildClick()
+        {
+            if (_building) return;
+            if (WireifyGhRuntime.StateFor(DocPath) >= WireifyConnectionState.TerminalLaunched)
+            {
+                // Inert by design (Hossein's call): a live session means "use its terminal" — a
+                // second terminal is a deliberate act, one right-click away.
+                Flash("session open — use its terminal (right-click: New Claude session)", warm: false);
                 return;
             }
             LaunchConnect();
         }
 
-        /// <summary>Run the Connect flow regardless of session state — a fresh terminal every time.
-        /// This is how the user gets Claude back after closing the window (the plugin cannot see a
-        /// terminal close, so the state may still read connected).</summary>
+        internal void OnAppClick()
+        {
+            var path = DocPath;
+            var status = WireifyGhRuntime.AppStatusFor(path);
+            if (!status.PageExists)
+            {
+                Flash(string.IsNullOrEmpty(path)
+                    ? "save the definition first — Wireify keys its home to the file path"
+                    : "no app page yet — Build, then ask Claude: make me an app page", warm: true);
+                return;
+            }
+            var result = WireifyGhRuntime.OpenApp(path);
+            Flash(result.Ok ? "opening the app in your browser" : result.Message, warm: !result.Ok);
+        }
+
+        internal void OnAddressClick()
+        {
+            var link = WireifyGhRuntime.AppLinkFor(DocPath);
+            if (link is null)
+            {
+                Flash("no app page yet", warm: true);
+                return;
+            }
+            try
+            {
+                Clipboard.SetText(link);
+                Flash("link copied", warm: false);
+            }
+            catch
+            {
+                Flash("could not copy — the link is in the Wireify panel log after Build", warm: true);
+            }
+        }
+
+        internal void OpenAppFolder()
+        {
+            var status = WireifyGhRuntime.AppStatusFor(DocPath);
+            if (string.IsNullOrEmpty(status.AppFolder))
+            {
+                Flash("no app folder yet — Build, then ask Claude: make me an app page", warm: true);
+                return;
+            }
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(status.AppFolder) { UseShellExecute = true });
+            }
+            catch { /* opening a folder is never worth an error dialog */ }
+        }
+
+        void Flash(string text, bool warm, int ms = 2500)
+        {
+            _transient = text;
+            _transientWarm = warm;
+            _transientUntil = DateTime.Now.AddMilliseconds(ms);
+            Repaint();
+            WireifyGhRuntime.RepaintAfter(ms + 100);
+        }
+
+        void Repaint()
+        {
+            Attributes?.ExpireLayout();
+            try { Grasshopper.Instances.RedrawCanvas(); } catch { /* best-effort */ }
+        }
+
+        /// <summary>Run the build flow (home, config, preflight, terminal) regardless of session
+        /// state — a fresh terminal every time. This is how the user gets Claude back after
+        /// closing the window (the plugin cannot see a terminal close on every platform, so the
+        /// state may still read open); the plate reports each step and any failure inline.</summary>
         internal void LaunchConnect()
         {
             var controller = WireifyGhRuntime.Controller;
@@ -179,27 +352,53 @@ namespace WireifyGh
             if (doc is null) return;
             if (string.IsNullOrEmpty(doc.FilePath))
             {
-                Rhino.UI.Dialogs.ShowMessage(
-                    "Save the definition first - Wireify keys the agent home to the .gh file path.",
-                    "Wireify");
+                Flash("save the definition first — Wireify keys its home to the file path", warm: true, ms: 4000);
                 return;
             }
 
             var path = doc.FilePath;
+            _building = true;
+            _buildError = "";
+            _buildHint = "";
+            Repaint();
             TryOpenPanel();
             Task.Run(() =>
             {
+                string error = "", hint = "";
                 try
                 {
                     var report = controller.Connect(path);
-                    if (!report.Success && report.Hint is { Length: > 0 } hint)
-                        RhinoApp.WriteLine($"[wireify] {hint}");
+                    if (!report.Success)
+                    {
+                        WireifyConnectStep? failed = null;
+                        foreach (var step in report.Steps)
+                            if (!step.Ok) failed = step;
+                        error = failed is null ? "build failed" : StripScope(failed.Message);
+                        hint = report.Hint ?? "";
+                        if (hint.Length > 0) RhinoApp.WriteLine($"[wireify] {hint}");
+                    }
                 }
                 catch (Exception ex)
                 {
+                    error = "build failed";
+                    hint = ex.Message;
                     RhinoApp.WriteLine($"[wireify] connect failed: {ex.Message}");
                 }
+                RhinoApp.InvokeOnUiThread(new Action(() =>
+                {
+                    _building = false;
+                    _buildError = error;
+                    _buildHint = hint;
+                    Repaint();
+                }));
             });
+        }
+
+        static string StripScope(string? message)
+        {
+            var m = message ?? "";
+            var close = m.StartsWith("[", StringComparison.Ordinal) ? m.IndexOf(']') : -1;
+            return close > 0 ? m.Substring(close + 1).Trim() : m;
         }
 
         static void TryOpenPanel()
@@ -215,7 +414,10 @@ namespace WireifyGh
             base.AppendAdditionalComponentMenuItems(menu);
             // Always offered: on platforms where the terminal window is untrackable (mac) the state
             // can stay green after a close, so relaunching must never be gated on state.
-            Menu_AppendItem(menu, "Open Claude terminal", (_, _) => LaunchConnect());
+            Menu_AppendItem(menu, "New Claude session", (_, _) => LaunchConnect());
+            Menu_AppendItem(menu, "Open companion app", (_, _) => OnAppClick());
+            Menu_AppendItem(menu, "Copy app link", (_, _) => OnAddressClick());
+            Menu_AppendItem(menu, "Open app folder", (_, _) => OpenAppFolder());
             Menu_AppendItem(menu, "Open Wireify panel", (_, _) => TryOpenPanel());
         }
 

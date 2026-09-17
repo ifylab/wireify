@@ -1,0 +1,98 @@
+<!doctype html>
+<!-- Companion-app starter, scaffolded by Wireify. This file is YOURS (the agent's/user's):
+     Wireify never overwrites it. Everything under kit/ is Wireify's and is refreshed on
+     Connect - never edit inside kit/; re-theme in theme.css, and read kit/KIT.md for the
+     classes, the binding API, and the design rules before reshaping this page. -->
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>companion app</title>
+<link rel="icon" href="./kit/ify-mark.svg" type="image/svg+xml">
+<script>
+  (function () {
+    var stored = null;
+    try { stored = localStorage.getItem('ify-theme'); } catch (e) {}
+    var p = new URLSearchParams(location.search).get('theme');
+    var m = (p === 'dark' || p === 'light' || p === 'auto') ? p : stored;
+    if (m !== 'dark' && m !== 'light' && m !== 'auto') m = 'auto';
+    document.documentElement.setAttribute('data-theme', m);
+  })();
+</script>
+<link rel="stylesheet" href="./kit/ify-fonts.css">
+<link rel="stylesheet" href="./kit/ify-tokens.css">
+<link rel="stylesheet" href="./kit/ify-app.css">
+<link rel="stylesheet" href="./theme.css">
+<style>
+  /* Controls up front: the app's core loop is move-something-watch-it-answer, so the
+     things you can move sit in a left rail, visible without scrolling; outputs beside
+     them. Collapses to one column (controls still first) on narrow viewports. */
+  .app-cols {
+    display: grid;
+    grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr);
+    gap: var(--ify-space-5) var(--ify-space-6);
+    align-items: start;
+  }
+  .app-rail { position: sticky; top: calc(var(--ify-app-bar-y) * 2 + 2.75rem); }
+  @media (max-width: 860px) {
+    .app-cols { grid-template-columns: minmax(0, 1fr); }
+    .app-rail { position: static; }
+  }
+</style>
+</head>
+<body class="ify-app">
+
+<header class="ify-appbar">
+  <span class="ify-appbar__mark" aria-label=".ify">
+    <svg viewBox="3 12 27 15" role="img" aria-hidden="true">
+      <circle cx="9" cy="22" r="4" fill="currentColor" />
+      <path d="M16 22 C 21 22, 23 14, 28 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+    </svg>
+  </span>
+  <!-- The definition is the app's title; set the real name when you shape this page. -->
+  <h1 class="ify-appbar__doc" id="doc-name">definition<span class="ify-appbar__ext">.gh</span></h1>
+  <div class="ify-appbar__right">
+    <span class="ify-status ify-status--stale" data-ify-status><span class="ify-status__dot"></span>connecting</span>
+    <button class="ify-toggle" type="button" data-ify-theme aria-label="Switch color theme">Dark</button>
+  </div>
+</header>
+
+<main class="ify-app__main">
+  <div class="app-cols">
+    <section class="ify-section app-rail">
+      <h2 class="ify-section__title">inputs</h2>
+      <div class="ify-controls" data-ify-controls></div>
+    </section>
+    <section class="ify-section">
+      <h2 class="ify-section__title">outputs</h2>
+      <div data-ify-views></div>
+    </section>
+  </div>
+</main>
+
+<footer class="ify-appfoot">
+  <span class="ify-appfoot__prov">built with wireify · <span class="ify-wordmark"><span class="ify-wordmark__dot">.</span>ify</span></span>
+</footer>
+
+<script type="module">
+  import { connect, mount, theme } from './kit/ify-app.js';
+
+  const app = connect();
+  mount(app, document);
+  theme.bindToggle(document.querySelector('[data-ify-theme]'));
+
+  // Best-effort title from the home id until the first frame carries the real name (the
+  // home id is the sanitized definition name plus a hash suffix).
+  const setDocName = (name) => {
+    document.getElementById('doc-name').firstChild.textContent = name;
+    document.title = name + '.gh';
+  };
+  const guessed = app.homeId.replace(/-[0-9a-f]{8,}$/i, '');
+  if (guessed) setDocName(guessed);
+  app.onState((s) => {
+    if (s.docName) setDocName(s.docName.replace(/\.gh$/i, ''));
+  });
+</script>
+
+</body>
+</html>

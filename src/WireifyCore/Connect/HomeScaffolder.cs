@@ -33,12 +33,20 @@ namespace WireifyCore.Connect
         const int BakKeep = 3;
 
         readonly string _templateRoot;
+        readonly HookShell _hookShell;
 
-        public HomeScaffolder(string templateRoot)
+        public HomeScaffolder(string templateRoot, HookShell hookShell = HookShell.Auto)
         {
             if (string.IsNullOrEmpty(templateRoot)) throw new ArgumentException("templateRoot required", nameof(templateRoot));
             _templateRoot = templateRoot;
+            _hookShell = hookShell;
         }
+
+        /// <summary>Which shell the scaffolded hook commands target. <see cref="Auto"/> follows
+        /// the running OS (the production case); the explicit values exist so tests can pin both
+        /// renderings from one machine. This is the per-OS token surface the learning-loop hooks
+        /// share — new hook events reuse <c>HookTokens</c> rather than re-deciding shells.</summary>
+        public enum HookShell { Auto, Windows, Posix }
 
         public sealed record Substitutions(int Port, string Secret, string GhFile);
 
@@ -82,8 +90,13 @@ namespace WireifyCore.Connect
             RenderManagedBlock("CLAUDE.md.tmpl", Path.Combine(homeDir, "CLAUDE.md"), subs, legacyPrepend: false, extras);
             RenderManagedBlock("memory-seed.md", memoryPath, subs, legacyPrepend: true, extras);
 
-            // Static read-only-tool allowlist; safe to refresh.
-            RenderTemplate("settings.json.tmpl", Path.Combine(homeDir, ".claude", "settings.json"), subs, overwrite: true);
+            // Lesson-gate hook scripts arrive (and refresh) every Connect, same posture as the
+            // skills tree; the settings render below points at them with per-OS commands.
+            CopyTree(Path.Combine(_templateRoot, "hooks"), Path.Combine(homeDir, ".wireify", "hooks"));
+
+            // Static read-only-tool allowlist + the lesson-gate hooks; safe to refresh.
+            RenderTemplate("settings.json.tmpl", Path.Combine(homeDir, ".claude", "settings.json"), subs, overwrite: true,
+                HookTokens(homeDir));
             // The home's standing spawn options (claude --model/--effort), in a file only Wireify
             // owns (NOT .claude/settings.local.json — Claude Code creates that itself for permission
             // decisions, which silently defeated a write-if-missing seed there). Per-KEY merge:
@@ -98,6 +111,12 @@ namespace WireifyCore.Connect
             if (!string.IsNullOrEmpty(sharedSkillsDir))
                 CopyTree(sharedSkillsDir!, Path.Combine(homeDir, ".claude", "skills"));
             CopyTree(Path.Combine(_templateRoot, "skills"), Path.Combine(homeDir, ".claude", "skills"));
+
+            // Companion-app kit: Wireify-owned, refreshed like the skills tree — but only for
+            // homes where an app already exists. Appless homes stay lean; the first stamp is
+            // scaffold_app's job, and agent/user files (index.html, manifest, theme.css) are
+            // never touched by the refresh.
+            AppKitScaffolder.RefreshKit(_templateRoot, homeDir);
 
             return new ScaffoldResult(memoryNote, MemoryStatus: MemoryStatusLine(memoryText));
         }
@@ -183,6 +202,39 @@ namespace WireifyCore.Connect
             if (start >= 0)
                 sections.Add((heading, string.Join("\n", lines.Skip(start))));
             return sections;
+        }
+
+        // ---- lesson-gate hooks ---------------------------------------------------------------
+
+        /// <summary>Per-OS hook command tokens for settings.json.tmpl. Scripts self-locate via
+        /// their own path, so the only OS-specific piece is the interpreter line; values are
+        /// JSON-encoded whole (quotes included) because Windows paths carry backslashes and may
+        /// carry spaces.</summary>
+        Dictionary<string, string> HookTokens(string homeDir)
+        {
+            var hooksDir = Path.Combine(Path.GetFullPath(homeDir), ".wireify", "hooks");
+            return new()
+            {
+                ["{{HOOK_SESSION_START}}"] = JsonCommand(hooksDir, "session-marker"),
+                ["{{HOOK_LOG_MUTATION}}"] = JsonCommand(hooksDir, "log-mutation"),
+                ["{{HOOK_STOP_REVIEW}}"] = JsonCommand(hooksDir, "stop-review"),
+            };
+        }
+
+        string JsonCommand(string hooksDir, string baseName)
+        {
+            var windows = _hookShell switch
+            {
+                HookShell.Windows => true,
+                HookShell.Posix => false,
+                _ => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+                    System.Runtime.InteropServices.OSPlatform.Windows),
+            };
+            var script = Path.Combine(hooksDir, baseName + (windows ? ".ps1" : ".sh"));
+            var cmd = windows
+                ? "powershell -NoProfile -ExecutionPolicy Bypass -File \"" + script + "\""
+                : "sh \"" + script + "\"";
+            return System.Text.Json.JsonSerializer.Serialize(cmd);
         }
 
         // ---- memory ledger -------------------------------------------------------------------
@@ -401,7 +453,7 @@ namespace WireifyCore.Connect
             }
         }
 
-        static void CopyTree(string sourceDir, string destDir)
+        internal static void CopyTree(string sourceDir, string destDir)
         {
             if (!Directory.Exists(sourceDir)) return;
             Directory.CreateDirectory(destDir);

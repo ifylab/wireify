@@ -1,0 +1,395 @@
+<!doctype html>
+<!-- Wireify raw-contract fixture. Ships in the kit (re-stamped on Build, like every
+     kit/ file), so the served page is ALWAYS the shipped one - no hand-copying, and the
+     meta line proves both the page version and the answering build (the client-side 18A
+     gate a PC round checks FIRST). It is also the smallest working example of the raw
+     contract - plain fetch + EventSource, no kit imports - the reference for the variant
+     ladder's re-shape rung (see KIT.md). Deliberately unstyled: the kit starter is the
+     styled default; this page proves the contract, not the feel. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wireify webapp fixture</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.15rem; font-weight: 600; }
+  .status { padding: .5rem .75rem; border-radius: 6px; background: #8882; margin: 1rem 0; font-size: .85rem; }
+  .status.err { background: #c4433322; }
+  .control { margin: 1.5rem 0; }
+  .control.refused { outline: 2px solid #c48833; outline-offset: 4px; }
+  .control label { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: .35rem; }
+  .control input[type=range] { width: 100%; }
+  .control textarea { width: 100%; font: inherit; }
+  .views { margin-top: 2rem; }
+  .view { border-top: 1px solid #8884; padding: .6rem 0; font-size: .85rem; }
+  .view b { font-size: .95rem; }
+  .samples { opacity: .75; word-break: break-all; }
+  .meta { opacity: .6; font-size: .75rem; margin-top: 2rem; }
+  #manifest-warnings { white-space: pre-line; font-size: .85rem; border-left: 3px solid #c48833; padding: .4rem .6rem; margin: 1rem 0; }
+</style>
+</head>
+<body>
+<h1>Wireify webapp fixture</h1>
+<div id="status" class="status">connecting…</div>
+<div id="controls"></div>
+<div id="views" class="views"></div>
+<div class="meta" id="meta"></div>
+<script>
+(() => {
+  // Fixture version, shown in the meta line beside the server build — the client-side
+  // build gate. A PC round must check this FIRST: round 3 silently ran a stale page and
+  // invalidated every client-side item. Bump on every fixture change.
+  const FIXTURE = "v12";
+
+  // /app/<homeId>/kit/fixture.html — the entry link carries ?token= once; the server
+  // answers it with a session cookie, so the URL can drop the token immediately (nothing
+  // secret in the location bar, logs, or referrers from here on).
+  const segs = location.pathname.split("/").filter(Boolean);
+  const homeId = segs[1] || "";
+  if (new URLSearchParams(location.search).get("token")) {
+    history.replaceState(null, "", location.pathname);
+  }
+  const api = (action) => `/app/${homeId}/api/${action}`;
+
+  const statusEl = document.getElementById("status");
+  const controlsEl = document.getElementById("controls");
+  const viewsEl = document.getElementById("views");
+  const metaEl = document.getElementById("meta");
+
+  let updates = 0;
+  let serverBuild = "";
+  let docUnits = "";
+  let lastState = null;
+  const widgets = new Map(); // id -> per-control render/update record
+
+  function setStatus(text, err) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (err ? " err" : "");
+  }
+
+  // Push path shared by every control kind; the response is the fresh control state.
+  // gesture rides the raw contract too: "start" as a marker-only body at pointer-down,
+  // "end" on the drag's final push — every push in the bracket is ONE undo record.
+  const push = (id, value, gesture) => fetch(api("values"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(gesture ? { id, value, gesture } : { id, value }),
+  }).then(async (r) => {
+    if (r.ok) return;
+    const body = await r.json().catch(() => ({}));
+    setStatus(`push refused (${r.status}${body.code ? " " + body.code : ""}): ${body.error || ""}`, true);
+    // The change did not land: mark the control and snap it back to the canvas value — a
+    // refused push must never look applied (round-7 finding 1; the front-tab rule is the
+    // usual reason, WIREIFY_DOC_NOT_ACTIVE).
+    const w = widgets.get(id);
+    const c = lastState && (lastState.controls || []).find((x) => x.id === id);
+    if (w) { w.root.classList.add("refused"); if (c) w.update(c); }
+  }).catch((e) => setStatus("push failed: " + e, true));
+  const gestureStart = (id) => fetch(api("values"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, gesture: "start" }),
+  }).catch(() => {});
+
+  function mount(c) {
+    const wrap = document.createElement("div");
+    wrap.className = "control";
+    const label = document.createElement("label");
+    const name = document.createElement("span");
+    // A missing control has no nickname left: its id is the handle to match against the
+    // manifest (round-7 finding 9 — the row used to read a bare "missing").
+    // A manifest label shows with the nickname beside it, the kit's way (v12).
+    name.textContent = (c.label || c.nickName || (c.kind === "missing" ? c.id : c.kind))
+      + (c.label && c.nickName ? " (" + c.nickName + ")" : "");
+    const valueEl = document.createElement("span");
+    label.append(name, valueEl);
+    wrap.append(label);
+    controlsEl.appendChild(wrap);
+    const w = { kind: c.kind, valueEl, dragging: false, timer: 0, root: wrap };
+
+    if (c.kind === "slider" || c.kind === "knob") {
+      // The knob's contract is slider-shaped (value/min/max/decimals/step, float grid) —
+      // one branch drives both kinds.
+      const input = document.createElement("input");
+      input.type = "range";
+      wrap.append(input);
+      input.addEventListener("pointerdown", () => { w.dragging = true; gestureStart(c.id); });
+      input.addEventListener("pointerup", () => {
+        w.dragging = false;
+        clearTimeout(w.timer);
+        push(c.id, Number(input.value), "end");
+      });
+      input.addEventListener("input", () => {
+        valueEl.textContent = input.value;
+        clearTimeout(w.timer);
+        w.timer = setTimeout(() => push(c.id, Number(input.value)), 60);
+      });
+      w.update = (s) => {
+        // GH is the authority on bounds AND value (derive, don't restate); echo suppression
+        // while the pointer is down — the canvas mirrors us anyway. step comes from the
+        // server (1 / 2 / 10^-decimals per the slider's own rounding — integer sliders must
+        // never receive off-grid drags), and the server snaps as the final authority anyway.
+        input.min = s.min; input.max = s.max; input.step = s.step || 1;
+        if (!w.dragging) {
+          input.value = s.value;
+          // An expression slider reports raw = evaluated: the thumb holds the raw value
+          // (what pushes read back), the evaluated number is what feeds the canvas.
+          valueEl.textContent = s.evaluated == null
+            ? String(s.value)
+            : `${s.value} = ${s.evaluated}`;
+        }
+      };
+    } else if (c.kind === "mdslider") {
+      // Raw-contract form: one range per axis (2 or 3, per the slider's mode); a push is
+      // the comma-separated axis string, all values DOMAIN values (the server clamps into
+      // the axis intervals). The kit's 2D pad is the styled gesture — the fixture proves
+      // the contract, not the feel.
+      const rows = document.createElement("div");
+      wrap.append(rows);
+      w.axisInputs = [];
+      const pushAxes = (gesture) => push(c.id, w.axisInputs.map((i) => i.value).join(","), gesture);
+      w.update = (s) => {
+        const axes = s.axes || [];
+        if (w.axisInputs.length !== axes.length) {
+          rows.innerHTML = "";
+          w.axisInputs = axes.map(() => {
+            const input = document.createElement("input");
+            input.type = "range";
+            input.step = "any";
+            input.addEventListener("pointerdown", () => { w.dragging = true; gestureStart(c.id); });
+            input.addEventListener("pointerup", () => {
+              w.dragging = false;
+              clearTimeout(w.timer);
+              pushAxes("end");
+            });
+            input.addEventListener("input", () => {
+              clearTimeout(w.timer);
+              w.timer = setTimeout(() => pushAxes(), 60);
+            });
+            rows.append(input);
+            return input;
+          });
+        }
+        axes.forEach((a, i) => {
+          const input = w.axisInputs[i];
+          input.min = a.min; input.max = a.max;
+          if (!w.dragging) input.value = a.value;
+        });
+        if (!w.dragging) valueEl.textContent = axes.map((a) => a.value).join(" , ");
+      };
+    } else if (c.kind === "colour") {
+      const input = document.createElement("input");
+      input.type = "color";
+      wrap.append(input);
+      input.addEventListener("change", () => push(c.id, input.value));
+      w.update = (s) => {
+        const hex = s.colour || "#000000";
+        // A color input holds no alpha — feed it the 6 rgb digits, report the full truth.
+        input.value = hex.length === 9 ? hex.slice(0, 7) : hex;
+        valueEl.textContent = hex;
+      };
+    } else if (c.kind === "toggle") {
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      label.insertBefore(input, name);
+      input.addEventListener("change", () => push(c.id, input.checked));
+      w.update = (s) => { input.checked = !!s.bool; valueEl.textContent = String(!!s.bool); };
+    } else if (c.kind === "valuelist") {
+      const select = document.createElement("select");
+      wrap.append(select);
+      select.addEventListener("change", () => push(c.id, Number(select.value)));
+      w.update = (s) => {
+        const items = s.items || [];
+        if (select.options.length !== items.length
+            || items.some((it, i) => select.options[i].textContent !== it)) {
+          select.innerHTML = "";
+          items.forEach((it, i) => {
+            const o = document.createElement("option");
+            o.value = String(i); o.textContent = it;
+            select.append(o);
+          });
+        }
+        if (s.selected != null) select.value = String(s.selected);
+        valueEl.textContent = s.text || "";
+      };
+    } else if (c.kind === "panel") {
+      const area = document.createElement("textarea");
+      area.rows = 2;
+      area.dir = "auto";
+      wrap.append(area);
+      area.addEventListener("focus", () => { w.dragging = true; });
+      area.addEventListener("blur", () => { w.dragging = false; });
+      area.addEventListener("change", () => push(c.id, area.value));
+      w.update = (s) => { if (!w.dragging) area.value = s.text || ""; valueEl.textContent = `${(s.text || "").length} chars`; };
+    } else if (c.kind === "button") {
+      // Momentary, like the canvas button: true while held, false on release.
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "hold";
+      wrap.append(btn);
+      const release = () => { if (w.dragging) { w.dragging = false; push(c.id, false); } };
+      btn.addEventListener("pointerdown", () => { w.dragging = true; push(c.id, true); });
+      btn.addEventListener("pointerup", release);
+      btn.addEventListener("pointerleave", release);
+      w.update = (s) => { valueEl.textContent = s.bool ? "pressed" : "idle"; };
+    } else {
+      w.update = (s) => { // missing / unsupported:<name>
+        valueEl.textContent = s.kind === "missing"
+          ? `missing — ${s.id} left the document (ctrl-Z in Grasshopper restores it)`
+          : s.kind;
+      };
+    }
+    return w;
+  }
+
+  function renderControls(controls) {
+    const seen = new Set();
+    for (const c of controls) {
+      seen.add(c.id);
+      let w = widgets.get(c.id);
+      // Remount when the KIND changes mid-life (a slider deleted on the canvas reports
+      // kind "missing" on the next frame): the old widget's updater would keep painting
+      // stale numbers — the zeroed ghost row (S4.5 in this page's own code, round-5 S5.8a).
+      if (!w || w.kind !== c.kind) {
+        if (w) w.root.remove();
+        w = mount(c);
+        widgets.set(c.id, w);
+      }
+      w.update(c);
+    }
+    // A control that left the frame (undone away on the canvas, or removed from the
+    // manifest) takes its row with it — stale rows misreport state as zeros/empties.
+    for (const [id, w] of widgets) {
+      if (!seen.has(id)) { w.root.remove(); widgets.delete(id); }
+    }
+  }
+
+  function renderViews(views) {
+    viewsEl.innerHTML = "";
+    for (const v of views) {
+      const div = document.createElement("div");
+      div.className = "view";
+      const warn = (v.warnings || []).join("; ");
+      const samples = (v.samples || []).map((x) => x.value).join(" · ");
+      div.innerHTML = `<b></b> — ${v.tree.pathCount} branch(es), ${v.tree.dataCount} item(s)`
+        + (v.samplesTruncated ? ` (showing ${(v.samples || []).length})` : "")
+        + (warn ? ` <em></em>` : "")
+        + `<div class="samples"></div>`;
+      // label = qualified display string; param = the bare name a page matches on (S5.11h).
+      div.querySelector("b").textContent = v.label || v.param;
+      if (warn) div.querySelector("em").textContent = `[${warn}]`;
+      div.querySelector(".samples").textContent = samples;
+      viewsEl.appendChild(div);
+    }
+  }
+
+  function renderMeta() {
+    metaEl.textContent = `fixture ${FIXTURE} · server ${serverBuild || "unknown"} · home ${homeId}`
+      + ` · units ${docUnits || "unknown"} · last update ${new Date().toLocaleTimeString()}`;
+  }
+
+  // Manifest declarations the server could not use ride the frame as warnings — the raw
+  // contract shows them raw (a dropped declaration must never be silent; S6.11j).
+  function renderWarnings(warnings) {
+    let el = document.getElementById("manifest-warnings");
+    if (!warnings.length) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "manifest-warnings";
+      controlsEl.parentNode.insertBefore(el, controlsEl);
+    }
+    el.textContent = warnings.map((w) => `manifest: ${w}`).join("\n");
+  }
+
+  function apply(state) {
+    updates++;
+    lastState = state;
+    if (state.docUnits) docUnits = state.docUnits;
+    renderWarnings(state.warnings || []);
+    renderControls(state.controls || []);
+    renderViews(state.views || []);
+    // The front-tab rule, stated before any drag: Grasshopper solves only the front
+    // document, so the server refuses pushes at a background tab (round-7 finding 1 —
+    // the one-build exemption landed values that never solved). Closed / expired /
+    // unreachable stay the recovery classifier's job.
+    const front = state.isActiveCanvas !== false;
+    if (front) for (const w of widgets.values()) w.root.classList.remove("refused");
+    setStatus(front
+      ? `live — ${updates} update(s)`
+      : `not in front — bring the definition's Grasshopper tab to front to interact · ${updates} update(s)`, !front);
+    renderMeta();
+  }
+
+  // The state GET's envelope carries the answering build (SSE frames stay lean) — the
+  // meta line pairs it with the fixture version so a round's opening gate reads both
+  // from one line.
+  fetch(api("state")).then((r) => r.json()).then((s) => {
+    serverBuild = s.wireify || "";
+    if (s.docUnits) docUnits = s.docUnits;
+    renderMeta();
+  }).catch(() => {});
+
+  // Recovery: a cheap state GET every few seconds, switched on the CODE it answers —
+  // the server distinguishes healthy (200 -> reload back to live), definition closed
+  // (409 WIREIFY_DOC_NOT_OPEN, heals on reopen), manifest missing/unparseable (404, the
+  // reason in the body), and a rotated link (401 WIREIFY_APP_UNAUTHORIZED, can never heal —
+  // the message stands and the poll stops). Rendering three of those as "is Rhino open?"
+  // sent users to restart Rhino over a JSON comma (round-6 S6.11k; the cold-load half is
+  // S6.11d). A protocol prefix on a sentence is dropped, never shown (round-10 S10.3).
+  const plain = (text) => String(text || "").replace(/^WIREIFY_[A-Z_]+:\s*/, "");
+  let recovering = 0;
+  function probe() {
+    fetch(api("state")).then(async (r) => {
+      if (r.ok) { clearInterval(recovering); location.reload(); return; }
+      if (r.status === 401) {
+        clearInterval(recovering);
+        setStatus("this app link has expired — app links rotate every Rhino run; "
+          + "press Open app on the Wireify component in Grasshopper (or ask Claude for get_app_info) and open the fresh link", true);
+        return;
+      }
+      const body = await r.json().catch(() => null);
+      const code = (body && body.code) || "";
+      if (r.status === 409 && (!code || code === "WIREIFY_DOC_NOT_OPEN")) {
+        setStatus("definition closed — reopen it in Rhino; this page reconnects on its own", true);
+        return;
+      }
+      setStatus(plain((body && body.error) || `state check failed (${r.status})`), true);
+    }).catch(() => {
+      setStatus("disconnected — is Rhino (and the definition) still open?", true);
+    });
+  }
+  function startRecovery() {
+    if (recovering) return;
+    events.close(); // stop the dead stream's retries; a 200 probe reloads the page live
+    probe();
+    recovering = setInterval(probe, 5000);
+  }
+
+  // EventSource cannot set headers; the session cookie authenticates the stream.
+  const events = new EventSource(api("events"));
+  events.addEventListener("state", (e) => apply(JSON.parse(e.data)));
+  events.addEventListener("status", (e) => {
+    const d = JSON.parse(e.data);
+    if (d.solving) { setStatus("solving…", false); return; }
+    const text = d.error || "status";
+    // Switched on the frame's CODE (a codeless frame with "closed" in it is an older
+    // server); the sentence itself is never the classifier (round-10 S10.3).
+    const code = d.code || "";
+    if (code === "WIREIFY_DOC_NOT_OPEN" || (!code && text.indexOf("closed") >= 0)) {
+      // Say the recovery AND run it — a user reopening their file must never sit in
+      // front of a dead page that only F5 could fix (round-5 S5.11c, reproduced 3x).
+      setStatus("definition closed — reopen it in Rhino; this page reconnects on its own", true);
+      startRecovery();
+      return;
+    }
+    setStatus(plain(text), true);
+  });
+  // A dead stream routes through the classifier — including a COLD LOAD into a broken
+  // manifest or an expired link, where the very first connect is what fails.
+  events.onerror = () => startRecovery();
+})();
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@ description: "Consolidate this Wireify definition's lesson ledger. Use when the 
 
 `MEMORY.md` at this home's root is the definition's lesson ledger, imported into context every session. Left alone it only grows: near-duplicate lessons pile up, entries go stale against the current canvas, and cross-file rules sit here instead of `~/.ify/wireify/defaults.md`. This skill is the guided consolidation pass -- strictly user-invoked, one pass per invocation.
 
-The mechanical side is already handled elsewhere: Connect dedups byte-identical entries and archives overflow to `MEMORY-archive.md` (snapshot-first). This pass is the SEMANTIC side -- merging, rewriting, and promoting -- which only happens with the user in the loop.
+The mechanical side is already handled elsewhere: Build dedups byte-identical entries and archives overflow to `MEMORY-archive.md` (snapshot-first). This pass is the SEMANTIC side -- merging, rewriting, and promoting -- which only happens with the user in the loop.
 
 ## Procedure
 

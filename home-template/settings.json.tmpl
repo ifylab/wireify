@@ -5,13 +5,50 @@
       "mcp__wireify__get_document_summary",
       "mcp__wireify__introspect_selected",
       "mcp__wireify__introspect_component",
+      "mcp__wireify__get_document_graph",
       "mcp__wireify__read_input_data",
       "mcp__wireify__get_runtime_info",
       "mcp__wireify__get_source",
       "mcp__wireify__read_runtime_errors",
+      "mcp__wireify__get_app_info",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__claude-in-chrome__tabs_create_mcp",
+      "mcp__claude-in-chrome__tabs_close_mcp",
+      "mcp__claude-in-chrome__navigate",
+      "mcp__claude-in-chrome__read_page",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__read_console_messages",
+      "mcp__claude-in-chrome__read_network_requests",
+      "mcp__claude-in-chrome__javascript_tool",
+      "mcp__claude-in-chrome__resize_window",
+      "mcp__claude-in-chrome__computer",
       "Read(~/.ify/wireify/**)",
-      "Write(~/.ify/wireify/devlog.md)",
       "Edit(~/.ify/wireify/devlog.md)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": {{HOOK_SESSION_START}} }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__wireify__(convert_staged|set_source|set_io|set_typed_io|create_python_component|wire)",
+        "hooks": [
+          { "type": "command", "command": {{HOOK_LOG_MUTATION}} }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": {{HOOK_STOP_REVIEW}} }
+        ]
+      }
     ]
   }
 }

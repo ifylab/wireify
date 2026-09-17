@@ -1,16 +1,22 @@
 name: wireify
-version: 0.2.0
+version: 0.3.0
 authors:
   - Hossein Zargar
 description: >
   Your own Claude Code, live in Grasshopper. Stage inputs on a numbered Wireify socket,
   say what the component should do, and it converts in place into a stock Python 3 script
-  component - wires kept, live wire data read before a line is written, runtime errors fixed
-  in a loop. It also reads, runs, and ports legacy GhPython (IronPython 2) components to
-  Python 3. Saved definitions carry no Wireify dependency. Built on the official
-  MCP C# SDK at the current protocol revision; sessions default to Sonnet 5.
-  Requires Claude Code (Pro/Max/Team/Enterprise or a Claude Console account)
-  on the same machine.
+  component: wires kept, live wire data read before a line is written, runtime errors fixed
+  in a loop. New in 0.3: every definition can have a companion web app, a browser page the
+  plugin serves on your own machine that stays in step with the canvas both ways, sliders
+  and panels pushing into Grasshopper and every solve pushing back into a 3D view, drawings
+  and figures, with a baked HTML report; using it needs no Claude session. One built this
+  way is public at halo.ifylab.dev. It also reads, runs, and ports legacy GhPython
+  (IronPython 2) components to Python 3. Saved definitions
+  carry no Wireify dependency. 22 canvas tools on the official MCP C# SDK at the current
+  protocol revision; sessions default to Sonnet 5. Requires Claude Code (Pro/Max/Team/
+  Enterprise or a Claude Console account) on the same machine. 0.2.0 no longer connects to
+  current Claude Code; the Package Manager updates you. Rhino 8 on Windows, SR18 or newer;
+  Mac support is planned.
 url: https://ifylab.dev
 keywords:
   - grasshopper
@@ -26,4 +32,8 @@ keywords:
   - agent
   - automation
   - ironpython
+  - web-app
+  - companion-app
+  - browser
+  - report
 icon: icon.png

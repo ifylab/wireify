@@ -21,23 +21,28 @@ namespace WireifyCore.Hosting
     {
         sealed class Session
         {
-            public Session(string homeId, string ghPath, Guid documentId, ITerminalHandle? terminal,
-                WireifyConnectionState state)
+            public Session(string homeId, string ghPath, Guid documentId, WireifyConnectionState state)
             {
                 HomeId = homeId;
                 GhPath = ghPath;
                 DocumentId = documentId;
-                Terminal = terminal;
                 State = state;
             }
 
             public string HomeId { get; }
             public string GhPath { get; set; }
             public Guid DocumentId { get; set; }
-            public ITerminalHandle? Terminal { get; set; }
+            /// <summary>Every terminal launched for this definition that has not exited — a
+            /// session is live while ANY of them is (round-9 S9.7: tracking only the newest read
+            /// Build while an older terminal answered MCP calls, and the click spawned a third).</summary>
+            public List<ITerminalHandle> Terminals { get; } = new();
             public WireifyConnectionState State { get; set; }
             public string FileName => FileNameOf(GhPath);
         }
+
+        /// <summary>What a terminal exit meant for its session: the definition's file name and
+        /// how many of its terminals are still open (zero = the session demoted).</summary>
+        public sealed record TerminalExit(string FileName, int Remaining);
 
         /// <summary>Display name for logs/errors — splits on either separator so a Windows path
         /// renders correctly even where '\\' is not the platform separator.</summary>
@@ -50,9 +55,10 @@ namespace WireifyCore.Hosting
         readonly object _gate = new();
         readonly Dictionary<string, Session> _byHome = new(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>A Connect happened for this home: create or replace its session. A replaced
-        /// terminal re-arms the Connected transition (the fresh terminal must authenticate
-        /// itself); the binding always reflects the latest Connect.</summary>
+        /// <summary>A Connect happened for this home: create or refresh its session. A new
+        /// terminal joins the ones still open (the session stays Connected if one of them already
+        /// authenticated; otherwise the fresh terminal re-arms the transition); the binding always
+        /// reflects the latest Connect.</summary>
         public void Register(string homeId, string ghPath, Guid documentId, ITerminalHandle? terminal, bool launched)
         {
             if (string.IsNullOrEmpty(homeId)) throw new ArgumentException("homeId required", nameof(homeId));
@@ -60,17 +66,36 @@ namespace WireifyCore.Hosting
             var state = launched ? WireifyConnectionState.TerminalLaunched : WireifyConnectionState.ServerListening;
             lock (_gate)
             {
-                if (_byHome.TryGetValue(homeId, out var existing))
+                if (!_byHome.TryGetValue(homeId, out var existing))
                 {
-                    existing.GhPath = ghPath;
-                    existing.DocumentId = documentId;
-                    existing.Terminal = terminal;
-                    existing.State = state;
+                    existing = new Session(homeId, ghPath, documentId, state);
+                    _byHome[homeId] = existing;
                 }
                 else
                 {
-                    _byHome[homeId] = new Session(homeId, ghPath, documentId, terminal, state);
+                    existing.GhPath = ghPath;
+                    existing.DocumentId = documentId;
+                    existing.State = existing.Terminals.Count > 0 && existing.State > state ? existing.State : state;
                 }
+                if (terminal is not null && !existing.Terminals.Contains(terminal))
+                    existing.Terminals.Add(terminal);
+            }
+        }
+
+        /// <summary>The definition was saved under a new path (Save As) while its session lives:
+        /// the session follows the document instance, so its sockets keep reading "Session open"
+        /// on the renamed file and the old path reads Build. Returns the new file name when a
+        /// session moved, else null (nothing was registered for the old path).</summary>
+        public string? Repath(string? oldPath, string? newPath)
+        {
+            if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath)) return null;
+            if (PathsEqual(oldPath, newPath)) return null;
+            lock (_gate)
+            {
+                var session = _byHome.Values.FirstOrDefault(s => PathsEqual(s.GhPath, oldPath));
+                if (session is null) return null;
+                session.GhPath = newPath!;
+                return session.FileName;
             }
         }
 
@@ -87,19 +112,20 @@ namespace WireifyCore.Hosting
             }
         }
 
-        /// <summary>A tracked terminal exited. When the handle is still the CURRENT terminal of a
-        /// session, that session demotes to ServerListening (its socket reads Connect again, the
-        /// auth transition re-arms) and its file name is returned; a superseded handle is null.</summary>
-        public string? HandleExit(ITerminalHandle handle)
+        /// <summary>A tracked terminal exited. The session forgets that handle; only when it was
+        /// the LAST open terminal does the session demote to ServerListening (its sockets read
+        /// Build again, the auth transition re-arms). Null for a handle no session tracks.</summary>
+        public TerminalExit? HandleExit(ITerminalHandle handle)
         {
             lock (_gate)
             {
-                var session = _byHome.Values.FirstOrDefault(s => ReferenceEquals(s.Terminal, handle));
+                var session = _byHome.Values.FirstOrDefault(s => s.Terminals.Contains(handle));
                 if (session is null) return null;
-                session.Terminal = null;
-                if (session.State < WireifyConnectionState.TerminalLaunched) return null;
-                session.State = WireifyConnectionState.ServerListening;
-                return session.FileName;
+                session.Terminals.Remove(handle);
+                var remaining = session.Terminals.Count;
+                if (remaining == 0 && session.State >= WireifyConnectionState.TerminalLaunched)
+                    session.State = WireifyConnectionState.ServerListening;
+                return new TerminalExit(session.FileName, remaining);
             }
         }
 
@@ -124,6 +150,17 @@ namespace WireifyCore.Hosting
                 return _byHome.TryGetValue(homeId, out var s)
                     ? new SessionBinding(s.DocumentId, s.GhPath, s.FileName)
                     : null;
+            }
+        }
+
+        /// <summary>Every registered session as (home id, .gh path) — the Connect console
+        /// iterates these to print an app line per live home, filtering to still-open documents
+        /// itself (this registry knows registrations, not the document server).</summary>
+        public IReadOnlyList<(string HomeId, string GhPath)> ActiveSessions()
+        {
+            lock (_gate)
+            {
+                return _byHome.Values.Select(s => (s.HomeId, s.GhPath)).ToList();
             }
         }
 

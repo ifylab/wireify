@@ -1,0 +1,787 @@
+/* SPDX-License-Identifier: Apache-2.0
+   .ify app kit - reset + component classes. The grammar is the ifylab.dev design language
+   at app density. Rules of the house: depth from spacing and hairlines, never shadow;
+   hover by color or border change only; pills are not buttons; native form controls stay
+   native; nothing overflows its container (wide content scrolls inside its own wrapper).
+   Kit classes are ify-prefixed; your own classes are anything else - the boundary stays
+   visible in the markup. Re-theme in ../theme.css, never in this file. */
+
+/* --- Reset + base ------------------------------------------------------------------ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ify-bg);
+  color: var(--ify-ink);
+  font-family: var(--ify-font-text);
+  font-size: var(--ify-text-base);
+  line-height: var(--ify-leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg, canvas, video { max-width: 100%; }
+
+::selection { background: var(--ify-accent-muted); }
+
+:focus-visible {
+  outline: 2px solid var(--ify-focus);
+  outline-offset: 2px;
+}
+
+button { font: inherit; }
+
+a.ify-link {
+  color: var(--ify-accent-strong);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--ify-motion-dur) var(--ify-motion-ease-out);
+}
+a.ify-link:hover { border-bottom-color: currentColor; }
+a.ify-link--out::after { content: " \2192"; color: var(--ify-accent); }
+
+/* --- App shell --------------------------------------------------------------------- */
+
+.ify-app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ify-app__main {
+  flex: 1;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--ify-space-5) var(--ify-app-gutter) var(--ify-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ify-space-5);
+}
+
+.ify-app__body {
+  display: grid;
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+  gap: var(--ify-space-5);
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .ify-app__body { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* --- App header -------------------------------------------------------------------- */
+
+.ify-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--ify-space-4);
+  padding: var(--ify-app-bar-y) var(--ify-app-gutter);
+  background: var(--ify-bg);
+  border-bottom: 1px solid var(--ify-line);
+}
+
+.ify-appbar__mark {
+  display: inline-flex;
+  color: var(--ify-ink);
+  line-height: 0;
+}
+.ify-appbar__mark svg { width: 22px; height: 13px; }
+
+.ify-appbar__doc {
+  margin: 0;
+  font-family: var(--ify-font-text);
+  font-size: var(--ify-text-lg);
+  font-weight: var(--ify-weight-medium);
+  letter-spacing: var(--ify-tracking-tight);
+  line-height: var(--ify-leading-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ify-appbar__ext { color: var(--ify-ink-subtle); }
+
+.ify-appbar__right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ify-space-3);
+}
+
+/* --- Tabs -------------------------------------------------------------------------- */
+
+.ify-tabs {
+  display: flex;
+  gap: var(--ify-space-4);
+  margin-left: var(--ify-space-4);
+}
+
+.ify-tab {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  letter-spacing: var(--ify-tracking-wide);
+  color: var(--ify-ink-muted);
+  text-decoration: none;
+  padding: 6px 2px;
+  border-bottom: 2px solid transparent;
+  transition: color var(--ify-motion-dur) var(--ify-motion-ease-out),
+              border-color var(--ify-motion-dur) var(--ify-motion-ease-out);
+}
+.ify-tab:hover { color: var(--ify-accent-strong); }
+.ify-tab--on {
+  color: var(--ify-accent-strong);
+  border-bottom-color: var(--ify-accent-strong);
+}
+
+/* --- Status pill ------------------------------------------------------------------- */
+/* Vocabulary (ratified 2026-08-26): live = the calm accent band, stale = quiet surface,
+   blocked = warm (the one scarce "this, right now" role), down = outline, honestly off. */
+
+.ify-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  letter-spacing: var(--ify-tracking-wide);
+  line-height: 1;
+  padding: 5px 11px;
+  border-radius: var(--ify-radius-pill);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.ify-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--ify-radius-pill);
+  background: currentColor;
+  flex: none;
+}
+
+.ify-status--live { background: var(--ify-accent-muted); color: var(--ify-accent-strong); }
+.ify-status--stale { background: var(--ify-surface-2); color: var(--ify-ink-muted); }
+.ify-status--blocked { background: var(--ify-warm); color: var(--ify-on-warm); }
+.ify-status--down {
+  background: transparent;
+  border-color: var(--ify-line-strong);
+  color: var(--ify-ink-subtle);
+}
+
+/* --- Theme toggle ------------------------------------------------------------------ */
+
+.ify-toggle {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  letter-spacing: var(--ify-tracking-wide);
+  line-height: 1;
+  padding: 5px 11px;
+  border-radius: var(--ify-radius-pill);
+  border: 1px solid var(--ify-line-strong);
+  background: transparent;
+  color: var(--ify-ink-muted);
+  cursor: pointer;
+  transition: color var(--ify-motion-dur) var(--ify-motion-ease-out),
+              border-color var(--ify-motion-dur) var(--ify-motion-ease-out);
+}
+.ify-toggle:hover { color: var(--ify-accent-strong); border-color: var(--ify-accent); }
+
+/* --- Section ----------------------------------------------------------------------- */
+
+.ify-section { margin: 0; }
+
+.ify-section__title {
+  display: flex;
+  align-items: center;
+  gap: var(--ify-space-3);
+  margin: 0 0 var(--ify-app-gap);
+  font-family: var(--ify-font-text);
+  font-size: var(--ify-text-sm);
+  font-weight: var(--ify-weight-medium);
+  color: var(--ify-ink);
+}
+.ify-section__title::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--ify-line);
+}
+
+/* --- Controls ---------------------------------------------------------------------- */
+
+.ify-controls {
+  display: grid;
+  /* The slider column keeps a usable width whatever the label column holds: a long help
+     line used to grow the label track to its content and leave the range input 0 px wide
+     (the HALO page, 2026-09-15). The label column wraps instead. */
+  grid-template-columns: minmax(0, auto) minmax(6rem, 1fr) auto;
+  column-gap: var(--ify-space-4);
+  /* Two grid rows per control now carry what four stacked lines used to: the gap stays
+     small so a control reads as one block. */
+  row-gap: var(--ify-space-2);
+  align-items: center;
+}
+
+.ify-slider { display: contents; }
+
+.ify-slider__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ify-slider__name { font-size: var(--ify-text-sm); }
+/* The manifest's label, then one quiet line under it carrying the canvas nickname and the
+   range together: stacked separately they cost every control two lines of height and read
+   as three tiers where there are two. */
+.ify-slider__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--ify-space-3);
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+}
+.ify-slider__meta:empty { display: none; }
+.ify-slider__nick { overflow-wrap: anywhere; }
+.ify-slider__bounds { white-space: nowrap; }
+/* The help line is its own row across the whole grid: given the label column's width it
+   wrapped to three lines, so a sentence written as one line can render as one. */
+.ify-slider__help {
+  grid-column: 1 / -1;
+  margin-top: calc(-1 * var(--ify-space-1));
+  font-family: var(--ify-font-text);
+  font-size: var(--ify-text-xs);
+  line-height: 1.35;
+  color: var(--ify-ink-muted);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.ify-slider__input {
+  width: 100%;
+  height: 30px;
+  margin: 0;
+  accent-color: var(--ify-accent);
+}
+
+.ify-slider__value {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-sm);
+  font-variant-numeric: tabular-nums;
+  min-width: 6ch;
+  text-align: right;
+}
+
+/* A full-width control row (pad, panel textarea) spans the grid. */
+.ify-controls__wide { grid-column: 1 / -1; }
+
+/* --- 2D pad (MD slider) ------------------------------------------------------------ */
+
+.ify-pad {
+  position: relative;
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  background: var(--ify-surface);
+  border: 1px solid var(--ify-line-strong);
+  border-radius: var(--ify-radius-md);
+  cursor: crosshair;
+  touch-action: none;
+  transition: border-color var(--ify-motion-dur) var(--ify-motion-ease-out);
+}
+.ify-pad:hover { border-color: var(--ify-accent); }
+
+.ify-pad__thumb {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--ify-radius-pill);
+  background: var(--ify-accent);
+  transform: translate(-50%, 50%);
+  pointer-events: none;
+}
+
+.ify-pad__value {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Checkbox / toggle kind -------------------------------------------------------- */
+
+.ify-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ify-space-2);
+  font-size: var(--ify-text-sm);
+  cursor: pointer;
+}
+.ify-check input { accent-color: var(--ify-accent); width: 15px; height: 15px; margin: 0; }
+
+/* --- Select / value list ----------------------------------------------------------- */
+
+.ify-select { position: relative; display: inline-block; min-width: 0; }
+.ify-select::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  margin-top: -2px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--ify-ink-muted);
+  pointer-events: none;
+}
+.ify-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  background: var(--ify-surface);
+  color: var(--ify-ink);
+  border: 1px solid var(--ify-line-strong);
+  border-radius: var(--ify-radius-md);
+  font-family: var(--ify-font-text);
+  font-size: var(--ify-text-sm);
+  padding: 6px 28px 6px 10px;
+  cursor: pointer;
+}
+
+/* --- Text input / panel edit ------------------------------------------------------- */
+
+.ify-input {
+  width: 100%;
+  background: var(--ify-surface);
+  color: var(--ify-ink);
+  border: 1px solid var(--ify-line-strong);
+  border-radius: var(--ify-radius-md);
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-sm);
+  line-height: var(--ify-leading-normal);
+  padding: 6px 10px;
+  resize: vertical;
+}
+
+/* --- Colour swatch kind ------------------------------------------------------------ */
+
+.ify-color { display: inline-flex; align-items: center; gap: var(--ify-space-2); }
+.ify-color input[type="color"] {
+  width: 44px;
+  height: 30px;
+  padding: 2px;
+  background: var(--ify-surface);
+  border: 1px solid var(--ify-line-strong);
+  border-radius: var(--ify-radius-md);
+  cursor: pointer;
+}
+.ify-color__hex {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+}
+
+/* --- Buttons ----------------------------------------------------------------------- */
+
+.ify-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ify-space-2);
+  font-family: var(--ify-font-text);
+  font-size: var(--ify-text-sm);
+  font-weight: var(--ify-weight-medium);
+  padding: 8px 14px;
+  border-radius: var(--ify-radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ify-ink);
+  cursor: pointer;
+  transition: color var(--ify-motion-dur) var(--ify-motion-ease-out),
+              border-color var(--ify-motion-dur) var(--ify-motion-ease-out),
+              background-color var(--ify-motion-dur) var(--ify-motion-ease-out);
+}
+
+.ify-btn--primary {
+  background: var(--ify-accent-strong);
+  border-color: var(--ify-accent-strong);
+  color: var(--ify-on-accent);
+}
+.ify-btn--primary:hover { background: var(--ify-accent); border-color: var(--ify-accent); }
+
+.ify-btn--secondary { border-color: var(--ify-line-strong); }
+.ify-btn--secondary:hover { color: var(--ify-accent-strong); border-color: var(--ify-accent); }
+
+.ify-btn--ghost { color: var(--ify-ink-muted); }
+.ify-btn--ghost:hover { background: var(--ify-surface-2); }
+
+.ify-btn--sm { padding: 4px 10px; font-size: var(--ify-text-xs); }
+
+/* The button kind's momentary hold: pressed while the pointer is down, mirrored from
+   the canvas state via data-pressed. */
+.ify-hold { border-color: var(--ify-line-strong); }
+.ify-hold[data-pressed="true"], .ify-hold:active {
+  background: var(--ify-accent-strong);
+  border-color: var(--ify-accent-strong);
+  color: var(--ify-on-accent);
+}
+
+/* --- Readout ----------------------------------------------------------------------- */
+
+.ify-readout { display: flex; flex-direction: column; gap: var(--ify-space-1); }
+.ify-readout__label {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  letter-spacing: var(--ify-tracking-wide);
+  color: var(--ify-ink-muted);
+}
+.ify-readout__value {
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Panel readout (the GH panel is a code block) ---------------------------------- */
+
+.ify-panel {
+  position: relative;
+  margin: 0;
+  background: var(--ify-surface);
+  border: 1px solid var(--ify-line);
+  border-radius: var(--ify-radius-md);
+  padding: var(--ify-space-4);
+}
+.ify-panel__meta {
+  position: absolute;
+  top: var(--ify-space-2);
+  right: var(--ify-space-3);
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+}
+.ify-panel pre {
+  margin: 0;
+  overflow: auto;
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-sm);
+  line-height: var(--ify-leading-normal);
+}
+
+/* --- Data table -------------------------------------------------------------------- */
+
+/* The wrapper must be allowed to be narrower than its table, or as a grid or flex item
+   its automatic minimum size is the table's own width and it drags the whole column past
+   the screen instead of scrolling (HALO on a phone, 2026-09-15). */
+.ify-table__wrap { overflow-x: auto; min-width: 0; }
+
+.ify-table {
+  border-collapse: collapse;
+  width: 100%;
+  /* Inside __wrap the table takes its natural width and the wrapper scrolls. Squeezed
+     below that, cells that never wrap spill over their neighbours: a family name ran
+     into its own role column on a phone (HALO, 2026-09-15). */
+  min-width: max-content;
+}
+/* A header sits over its own column: the cells are right-aligned numbers, so a header
+   left-aligned above them pointed at the wrong place (HALO, 2026-09-15). */
+.ify-table th {
+  text-align: right;
+  font-weight: var(--ify-weight-regular);
+  font-size: var(--ify-text-sm);
+  color: var(--ify-ink-muted);
+  border-bottom: 1px solid var(--ify-line);
+  padding: var(--ify-space-1) var(--ify-space-3) var(--ify-space-1) 0;
+}
+.ify-table td {
+  font-family: var(--ify-font-mono);
+  font-size: var(--ify-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ify-line);
+  padding: var(--ify-space-1) var(--ify-space-3) var(--ify-space-1) 0;
+}
+.ify-table td:first-child, .ify-table th:first-child { text-align: left; }
+
+/* A table wider than a phone: sideways scrolling hides the numbers behind the edge and
+   says nothing about it. With every cell carrying its own `data-label`, `--stack` drops the
+   header row and makes each row a block, so a narrow screen reads the whole row. */
+@media (max-width: 560px) {
+  .ify-table--stack { min-width: 0; width: 100%; }
+  .ify-table--stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .ify-table--stack tbody tr {
+    display: block;
+    padding-block: var(--ify-space-3);
+    border-bottom: 1px solid var(--ify-line);
+  }
+  .ify-table--stack tbody td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--ify-space-4);
+    padding: 2px 0;
+    border: 0;
+    white-space: normal;
+    text-align: right;
+  }
+  .ify-table--stack tbody td::before {
+    content: attr(data-label);
+    font-family: var(--ify-font-label);
+    font-size: var(--ify-text-xs);
+    color: var(--ify-ink-muted);
+    text-align: left;
+  }
+  .ify-table--stack tbody td:first-child {
+    justify-content: flex-start;
+    gap: var(--ify-space-2);
+    padding-bottom: var(--ify-space-2);
+    text-align: left;
+  }
+  .ify-table--stack tbody td:first-child::before { content: none; }
+}
+
+/* The shaper's honesty carried to pixels: say what the table does not show. */
+.ify-table__trunc {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+  margin-top: var(--ify-space-2);
+}
+
+/* --- Indexed list ------------------------------------------------------------------ */
+
+.ify-list { list-style: none; margin: 0; padding: 0; }
+.ify-list__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ify-space-4);
+  padding: var(--ify-space-3) 0;
+  border-top: 1px solid var(--ify-line);
+}
+.ify-list__index {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-accent);
+}
+.ify-list__title { font-size: var(--ify-text-sm); font-weight: var(--ify-weight-medium); }
+.ify-list__meta {
+  margin-left: auto;
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+}
+
+/* --- 3D viewport frame (interior contract lands with the geometry step) ------------ */
+
+.ify-viewport { display: flex; flex-direction: column; gap: var(--ify-space-2); }
+.ify-viewport__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--ify-space-2) var(--ify-space-4);
+}
+.ify-viewport__label {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  letter-spacing: var(--ify-tracking-wide);
+  color: var(--ify-ink-muted);
+}
+.ify-viewport__action {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-accent-strong);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.ify-viewport__action:hover { color: var(--ify-accent); }
+.ify-viewport__canvas {
+  display: block;
+  position: relative;
+  width: 100%;
+  min-height: 240px;
+  background: var(--ify-surface);
+  border: 1px solid var(--ify-line);
+  border-radius: var(--ify-radius-md);
+  overflow: hidden;
+}
+/* A status line inside the frame is the frame's foot, not loose prose: it mirrors the
+   head, sits flush under the canvas, and reads as chrome. Page notes set in the same
+   fine print were blending into the control help beside them (HALO, 2026-09-15). */
+.ify-viewport > .ify-fine {
+  margin: calc(-1 * var(--ify-space-2)) 0 0;
+  padding: var(--ify-space-2) var(--ify-space-3);
+  border: 1px solid var(--ify-line);
+  border-top: 0;
+  border-radius: 0 0 var(--ify-radius-md) var(--ify-radius-md);
+  background: var(--ify-surface-2);
+  color: var(--ify-ink-muted);
+}
+.ify-viewport > .ify-fine:empty { display: none; }
+.ify-viewport__canvas:has(+ .ify-fine:not(:empty)) {
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* Named views + fit, rendered by the module into the head's `viewsEl`. */
+.ify-viewport__views { display: inline-flex; flex-wrap: wrap; gap: var(--ify-space-2) var(--ify-space-4); }
+.ify-viewport__action[aria-pressed="true"] {
+  color: var(--ify-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+/* The interaction overlay: a translucent card over the canvas with the orbit glyph and
+   the gestures, gone two seconds after the first geometry or at the first grab. */
+.ify-viewport__hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--ify-surface) 30%, transparent);
+  pointer-events: none;
+  transition: opacity 400ms var(--ify-motion-ease-out);
+}
+.ify-viewport__hint-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--ify-space-2);
+  padding: var(--ify-space-4) var(--ify-space-5);
+  border: 1px solid var(--ify-line);
+  border-radius: var(--ify-radius-md);
+  background: color-mix(in oklab, var(--ify-surface) 88%, transparent);
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-muted);
+}
+.ify-viewport__hint-card svg { color: var(--ify-accent-strong); }
+.ify-viewport__hint[data-gone] { opacity: 0; }
+
+/* --- Charts (marks stay single-series accent until the mark-ramp contract lands) --- */
+
+.ify-chart svg { display: block; width: 100%; height: auto; }
+.ify-chart text {
+  font-family: var(--ify-font-label);
+  font-size: 10px;
+  fill: var(--ify-ink-muted);
+}
+.ify-chart__grid { stroke: var(--ify-line); }
+.ify-chart__mark { fill: var(--ify-accent); stroke: none; }
+.ify-chart__stroke { fill: none; stroke: var(--ify-accent); stroke-width: 1.5; }
+
+/* --- Empty / error state ----------------------------------------------------------- */
+
+.ify-empty {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+  padding: var(--ify-space-4) 0;
+}
+
+/* Manifest warnings relayed off the state frame (declarations the parse dropped) - a
+   quiet accent-bordered strip, not an alarm: the page still works, the manifest needs a
+   fix, and the text says which entry and why. */
+.ify-warnings {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-muted);
+  border-left: 2px solid var(--ify-accent);
+  padding: var(--ify-space-2) var(--ify-space-3);
+  margin: 0 0 var(--ify-space-3);
+  display: grid;
+  gap: var(--ify-space-1);
+}
+.ify-warnings__line { margin: 0; }
+
+/* A refused push (the definition not in front, a value the control cannot hold): the row
+   it came from carries the mark and a one-line why, and its value snaps back to the canvas
+   truth - never a silent "applied" (round-7 finding 1). Rows are display: contents, so the
+   mark lands on the cells, not the row. */
+.ify-refused .ify-slider__name,
+.ify-refused .ify-slider__value,
+.ify-refused .ify-pad__value { color: var(--ify-warm-strong); }
+.ify-refused .ify-slider__input { accent-color: var(--ify-warm-strong); }
+.ify-refused__note {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-warm-strong);
+}
+
+/* --- Card (escape hatch - prefer real structure: lists, tables, sections) ---------- */
+
+.ify-card {
+  background: var(--ify-surface);
+  border: 1px solid var(--ify-line);
+  border-radius: var(--ify-radius-md);
+  padding: var(--ify-space-4);
+}
+
+/* --- Badge ------------------------------------------------------------------------- */
+
+.ify-badge {
+  display: inline-block;
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: var(--ify-radius-sm);
+}
+.ify-badge--neutral { background: var(--ify-surface-2); color: var(--ify-ink-muted); }
+.ify-badge--accent { background: var(--ify-accent-muted); color: var(--ify-accent-strong); }
+
+/* --- App footer -------------------------------------------------------------------- */
+
+.ify-appfoot {
+  display: flex;
+  align-items: center;
+  gap: var(--ify-space-3);
+  padding: var(--ify-app-bar-y) var(--ify-app-gutter);
+  background: var(--ify-surface);
+  border-top: 1px solid var(--ify-line);
+}
+
+.ify-appfoot__prov {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+}
+
+.ify-wordmark {
+  font-family: var(--ify-font-display);
+  font-weight: var(--ify-weight-bold);
+  letter-spacing: var(--ify-tracking-display);
+}
+.ify-wordmark__dot { color: var(--ify-accent); }
+
+/* --- Kicker / fine print ----------------------------------------------------------- */
+
+.ify-kicker {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  letter-spacing: var(--ify-tracking-wide);
+  color: var(--ify-ink-muted);
+}
+.ify-fine {
+  font-family: var(--ify-font-label);
+  font-size: var(--ify-text-xs);
+  color: var(--ify-ink-subtle);
+  margin: var(--ify-space-1) 0 0;
+}
+
+/* --- Motion discipline ------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
+
+/* --- The hidden attribute wins over every display rule above: a `hidden` kit element must
+   vanish, not render as a live-looking control (a standalone port shipped a dead "save
+   report" button because .ify-btn's display beat the attribute). ------------------------ */
+[hidden] { display: none !important; }

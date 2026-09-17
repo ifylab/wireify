@@ -18,7 +18,19 @@ namespace WireifyCore.Bridge
         /// <summary>Resolve a hint token against the registry's names, case-insensitively,
         /// returning the registry's own spelling — or null when absent.</summary>
         public static string? Resolve(string token, IReadOnlyList<string> available)
-            => available.FirstOrDefault(a => string.Equals(a, token, StringComparison.OrdinalIgnoreCase));
+        {
+            var exact = available.FirstOrDefault(a => string.Equals(a, token, StringComparison.OrdinalIgnoreCase));
+            if (exact is not null) return exact;
+            // float/double are one alias pair: Rhino's registries disagree per param direction
+            // (inputs offer "float", outputs only "double", and an output set to double ECHOES
+            // "float") — so an introspection echo fed back must resolve, both ways (S5.6f).
+            var alias = string.Equals(token, "float", StringComparison.OrdinalIgnoreCase) ? "double"
+                : string.Equals(token, "double", StringComparison.OrdinalIgnoreCase) ? "float"
+                : null;
+            return alias is null
+                ? null
+                : available.FirstOrDefault(a => string.Equals(a, alias, StringComparison.OrdinalIgnoreCase));
+        }
 
         /// <summary>Resolve an explicitly requested hint. An empty available list means the
         /// registry could not be enumerated — trust the request as-is. A non-empty list without a

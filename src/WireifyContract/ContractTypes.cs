@@ -123,4 +123,35 @@ namespace WireifyContract
         public bool Converted { get; }
         public string[] InputNames { get; }
     }
+
+    /// <summary>What a definition's companion app looks like from the canvas: whether its home
+    /// and page exist, the stable address a socket prints (no scheme, no token — it never
+    /// expires and never opens the app on its own; the per-run link is minted on click), the
+    /// app folder, and the reason there is no app when there is none. Cheap on every repaint
+    /// (the controller caches it briefly).</summary>
+    public sealed class WireifyAppStatus
+    {
+        public WireifyAppStatus(bool homeExists, bool pageExists, string homeId, string address, string appFolder, string reason)
+        {
+            HomeExists = homeExists;
+            PageExists = pageExists;
+            HomeId = homeId ?? "";
+            Address = address ?? "";
+            AppFolder = appFolder ?? "";
+            Reason = reason ?? "";
+        }
+
+        public static readonly WireifyAppStatus None =
+            new WireifyAppStatus(false, false, "", "", "", "save the definition first");
+
+        public bool HomeExists { get; }
+        /// <summary><c>app/index.html</c> exists in the home — the page Open app opens.</summary>
+        public bool PageExists { get; }
+        public string HomeId { get; }
+        /// <summary><c>127.0.0.1:&lt;port&gt;/app/&lt;home-id&gt;</c>; empty while the server is down.</summary>
+        public string Address { get; }
+        public string AppFolder { get; }
+        /// <summary>Empty when the page exists; otherwise why not, as a line of copy.</summary>
+        public string Reason { get; }
+    }
 }

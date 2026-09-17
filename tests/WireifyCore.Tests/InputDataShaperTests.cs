@@ -32,6 +32,28 @@ public class InputDataShaperTests
     }
 
     [Fact]
+    public void Samples_truncation_is_flagged_when_the_cap_bites_and_null_when_complete()
+    {
+        // Round-5 S5.11i: dataCount told the truth but nothing FLAGGED the short samples list —
+        // a page trusting samples rendered a five-row table and looked fine.
+        var capped = InputDataShaper.Shape("x", "list", new[]
+        {
+            Branch("{0}",
+                ("Number", "System.Double", "1"), ("Number", "System.Double", "2"),
+                ("Number", "System.Double", "3")),
+        }, 2, 50);
+        Assert.True(capped.SamplesTruncated);
+        Assert.Equal(2, capped.Samples.Count);
+        Assert.Equal(3, capped.Tree.DataCount);
+
+        var complete = InputDataShaper.Shape("x", "list", new[]
+        {
+            Branch("{0}", ("Number", "System.Double", "1"), ("Number", "System.Double", "2")),
+        }, 5, 50);
+        Assert.Null(complete.SamplesTruncated); // null, never false — absent means complete
+    }
+
+    [Fact]
     public void Histogram_groups_by_type_with_counts_and_clr()
     {
         var input = InputDataShaper.Shape("x", "list", new[]

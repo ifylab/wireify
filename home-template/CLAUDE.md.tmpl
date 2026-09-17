@@ -1,4 +1,4 @@
-<!-- wireify:begin — this block is managed by Wireify and refreshed on every Connect. Anything below the end marker is yours; Wireify never rewrites it. -->
+<!-- wireify:begin — this block is managed by Wireify and refreshed on every Build. Anything below the end marker is yours; Wireify never rewrites it. -->
 # Wireify project home — {{GH_FILE}}
 
 This directory is a Wireify home for the Grasshopper definition **{{GH_FILE}}**. Your own Claude Code is connected to that live canvas through the local `wireify` MCP server (loopback, this project's `.mcp.json`). You co-develop Python on the canvas: introspect the wired inputs, write typed components, run them, read Grasshopper's errors, and fix.
@@ -12,7 +12,7 @@ This directory is a Wireify home for the Grasshopper definition **{{GH_FILE}}**.
 
 ## Answering questions
 
-- Vague canvas nouns — "the lines", "the tags", "the points" — refer to the **live canvas** by default. Orient with ONE `get_document_summary` call (`includeStagedData: true` when sockets are staged) BEFORE asking any clarifying question; the canvas usually disambiguates. Never open with a question you could have answered by looking.
+- Vague canvas nouns — "the lines", "the tags", "the points" — refer to the **live canvas** by default. Orient with ONE `get_document_summary` call (`includeStagedData: true` when sockets are staged) BEFORE asking any clarifying question; the canvas usually disambiguates. For a definition-wide read (a port, an explanation, what feeds what) `get_document_graph` gives every node and wire in one call — never walk components one introspect at a time. Never open with a question you could have answered by looking.
 
 ## Conventions
 
@@ -21,7 +21,7 @@ This directory is a Wireify home for the Grasshopper definition **{{GH_FILE}}**.
 - Preserve Grasshopper data-tree structure unless explicitly restructuring. Validate at boundaries; surface failures as runtime messages, never silently.
 - Large text payloads (a big JSON/CSV) do not travel on canvas wires — GH panels clip pasted text, and a reported value length of exactly 32767 means the data was truncated upstream. Wire a file path instead and `open()` it in-script (`wireify-loop` > Big payloads).
 - The canvas is the user's live document: never create components as diagnostics, and ask before any mutation the user did not request (`wireify-loop` > Canvas etiquette).
-- This session is bound to **{{GH_FILE}}**, even with several files open in one Rhino. Reads keep working while its tab is in the background; only mutations need it to be the front canvas. On `WIREIFY_DOC_NOT_ACTIVE`, keep investigating freely and ask the user to switch tabs only when you are ready to change something.
+- This session is bound to **{{GH_FILE}}**, even with several files open in one Rhino. Reads keep working while its tab is in the background; only mutations need it to be the front canvas — the companion app's own pushes included (Grasshopper solves only the front document; the page says "not in front" and refuses until the tab is front). On `WIREIFY_DOC_NOT_ACTIVE`, keep investigating freely and ask the user to switch tabs only when you are ready to change something.
 
 The shared defaults are imported below — already in your context; treat them as standing instructions:
 
@@ -29,7 +29,7 @@ The shared defaults are imported below — already in your context; treat them a
 
 ## Memory
 
-This definition's lesson ledger is `MEMORY.md` in this directory, imported below — its contents are already in your context every session. It is a separate file from Claude Code's own auto-memory (which stays empty here); answer "what do you remember" questions from the ledger, not from the auto-memory. Record what failed and what fixed it as you go — append lessons to `MEMORY.md` as dated entries in the format defined at the top of the ledger, so the definition gets smarter each session. Promotion test — would the lesson hold in a brand-new `.gh` file? If yes, append ONE line to the `## Promoted lessons` section of `~/.ify/wireify/defaults.md` suffixed `(from <this home's folder name>, YYYY-MM-DD)` and keep only the definition-specific residue in `MEMORY.md`; if no, it stays here. A reusable multi-step procedure becomes a skill instead: a folder in this home's `.claude/skills/` (it survives Connects), or propose `~/.ify/wireify/skills/` to share it across every definition.
+This definition's lesson ledger is `MEMORY.md` in this directory, imported below — its contents are already in your context every session. It is a separate file from Claude Code's own auto-memory (which stays empty here); answer "what do you remember" questions from the ledger, not from the auto-memory. Record what failed and what fixed it as you go — append lessons to `MEMORY.md` as dated entries in the format defined at the top of the ledger, so the definition gets smarter each session. Promotion test — would the lesson hold in a brand-new `.gh` file? If yes, append ONE line to the `## Promoted lessons` section of `~/.ify/wireify/defaults.md` suffixed `(from <this home's folder name>, YYYY-MM-DD, build <wireify build stamp>)` and keep only the definition-specific residue in `MEMORY.md`; if no, it stays here. The build stamp matters: a promoted lesson describing a defect outlives the fix and then actively misleads every future session — a stamped lesson can be checked against the running build and marked superseded instead of trusted (round 6 retired four this way). A reusable multi-step procedure becomes a skill instead: a folder in this home's `.claude/skills/` (it survives Connects), or propose `~/.ify/wireify/skills/` to share it across every definition.
 
 {{MEM_DIRECTIVE}}
 

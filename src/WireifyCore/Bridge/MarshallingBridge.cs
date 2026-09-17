@@ -26,14 +26,14 @@ namespace WireifyCore.Bridge
         readonly IUiInvoker _ui;
         readonly Action<string, bool>? _log;
         readonly Action<string>? _entryLog;
-        readonly Action<string?>? _callContext;
+        readonly Action<SessionCallContext?>? _callContext;
         readonly TimeSpan _queueTimeout;
         readonly object _gate = new();
 
         public MarshallingBridge(
             IGrasshopperBridge inner, IUiInvoker ui,
             Action<string, bool>? log = null, TimeSpan? queueTimeout = null,
-            Action<string?>? callContext = null, Action<string>? entryLog = null)
+            Action<SessionCallContext?>? callContext = null, Action<string>? entryLog = null)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
             _ui = ui ?? throw new ArgumentNullException(nameof(ui));
@@ -51,7 +51,7 @@ namespace WireifyCore.Bridge
             _entryLog?.Invoke(tool);
             // Snapshot the calling session BEFORE any thread hop — the async context is intact
             // here; the UI-thread closure below must not depend on it flowing further.
-            var session = WireifySessionContext.CurrentHomeId;
+            var session = WireifySessionContext.Snapshot();
             if (!Monitor.TryEnter(_gate, _queueTimeout))
             {
                 var msg = ErrorProtocol.QueueTimeout(tool, _queueTimeout.TotalSeconds);
@@ -92,6 +92,14 @@ namespace WireifyCore.Bridge
         public ComponentIntrospection IntrospectComponent(Guid id)
             => Call("introspect_component", () => _inner.IntrospectComponent(id));
 
+        public DocumentGraph GetDocumentGraph(
+            IReadOnlyList<Guid>? ids = null,
+            bool includeParams = true,
+            bool includeOutputs = false,
+            int maxComponents = SummaryBounding.DefaultMaxComponents,
+            string? nameFilter = null)
+            => Call("get_document_graph", () => _inner.GetDocumentGraph(ids, includeParams, includeOutputs, maxComponents, nameFilter));
+
         public IReadOnlyList<ComponentIntrospection> IntrospectSelected()
             => Call("introspect_selected", () => _inner.IntrospectSelected());
 
@@ -104,14 +112,17 @@ namespace WireifyCore.Bridge
         public ScriptSource GetSource(Guid id)
             => Call("get_source", () => _inner.GetSource(id));
 
-        public Guid CreatePythonComponent(PythonRuntime runtime)
-            => Call("create_python_component", () => _inner.CreatePythonComponent(runtime));
+        public Guid CreatePythonComponent(PythonRuntime runtime, string? nickName = null)
+            => Call("create_python_component", () => _inner.CreatePythonComponent(runtime, nickName));
+
+        public AppControlState CreateControlComponent(ControlSpec spec)
+            => Call("create_control_component", () => _inner.CreateControlComponent(spec));
 
         public RuntimeReport? SetSource(Guid id, string source, PythonRuntime runtime, bool solve = true, bool overwriteExternalEdits = false)
             => Call("set_source", () => _inner.SetSource(id, source, runtime, solve, overwriteExternalEdits));
 
-        public void SetParametersFromScript(Guid id)
-            => Call<object?>("set_typed_io", () => { _inner.SetParametersFromScript(id); return null; });
+        public TypedIoResult SetParametersFromScript(Guid id)
+            => Call("set_typed_io", () => _inner.SetParametersFromScript(id));
 
         public WireResult Wire(Guid fromId, int fromOutput, Guid toId, int toInput, WireMode mode = WireMode.Strict)
             => Call("wire", () => _inner.Wire(fromId, fromOutput, toId, toInput, mode));
@@ -127,6 +138,12 @@ namespace WireifyCore.Bridge
         public DeletedComponent DeleteComponent(Guid id)
             => Call("delete_component", () => _inner.DeleteComponent(id));
 
+        public ClearBadgeResult ClearBadge(Guid id)
+            => Call("clear_badge", () => _inner.ClearBadge(id));
+
+        public RenameResult RenameComponent(Guid id, string nickName)
+            => Call("rename_component", () => _inner.RenameComponent(id, nickName));
+
         public PanelText SetPanelText(Guid id, string text)
             => Call("set_panel_text", () => _inner.SetPanelText(id, text));
 
@@ -135,5 +152,40 @@ namespace WireifyCore.Bridge
 
         public RuntimeReport ReadRuntimeErrors(Guid id, bool includeDocument = false)
             => Call("read_runtime_errors", () => _inner.ReadRuntimeErrors(id, includeDocument));
+
+        public AppState ReadAppState(AppQuery query)
+            => Call("app_state", () => _inner.ReadAppState(query));
+
+        public AppGeometry ReadAppGeometry(AppViewRef view)
+            => Call("app_geometry", () => _inner.ReadAppGeometry(view));
+
+        public AppSetResult SetAppControlValue(Guid id, AppPushValue value)
+            => Call("app_set_value", () => _inner.SetAppControlValue(id, value));
+
+        public AppControlState SetAppGesture(Guid id, bool open)
+            => Call("app_gesture", () => _inner.SetAppGesture(id, open));
+
+        public IDisposable SubscribeSolutionEnd(
+            Func<AppQuery?> queryProvider, Action<AppState> onSolution, Action<string>? onClosed = null,
+            Action? onSolveStart = null, Action<AppState>? onActiveChanged = null)
+        {
+            // The subscription call itself marshals like any other (UI thread + the serialized
+            // gate); the returned unsubscriber marshals its dispose the same way — removing a
+            // handler from the document's event list is document access too. The PROVIDER and the
+            // CALLBACKS (onSolution, onClosed, onSolveStart, onActiveChanged) are the exception:
+            // they run on the UI thread, unmarshalled, and must never re-enter this seam.
+            var inner = Call("app_subscribe", () => _inner.SubscribeSolutionEnd(
+                queryProvider, onSolution, onClosed, onSolveStart, onActiveChanged));
+            return new MarshalledDisposable(
+                () => Call<object?>("app_unsubscribe", () => { inner.Dispose(); return null; }));
+        }
+
+        sealed class MarshalledDisposable : IDisposable
+        {
+            Action? _dispose;
+            public MarshalledDisposable(Action dispose) => _dispose = dispose;
+            public void Dispose() =>
+                System.Threading.Interlocked.Exchange(ref _dispose, null)?.Invoke();
+        }
     }
 }

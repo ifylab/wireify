@@ -46,9 +46,12 @@ namespace WireifyContract
         }
 
         /// <summary>Display text for the number badge (socket and converted alike). Carries the
-        /// brand on shared canvases and screenshots — display only, never part of the nickname.</summary>
+        /// brand on shared canvases and screenshots — display only, never part of the nickname.
+        /// Lowercase like the plain touch capsule beside it (round-7 finding 13: `Wireify #1`
+        /// next to `wireify` on one canvas read as an oversight) and like every other place the
+        /// name appears — the kit, the home folders, the log lines.</summary>
         public static string BadgeLabel(int number)
-            => "Wireify #" + number.ToString(CultureInfo.InvariantCulture);
+            => "wireify #" + number.ToString(CultureInfo.InvariantCulture);
 
         /// <summary>Parse the Wireify number out of a nickname (<c>W3</c> / <c>W3 cull-panels</c>).</summary>
         public static bool TryParseNumber(string? nickName, out int number)
