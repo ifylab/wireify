@@ -13,10 +13,10 @@ description: >
   way is public at halo.ifylab.dev. It also reads, runs, and ports legacy GhPython
   (IronPython 2) components to Python 3. Saved definitions
   carry no Wireify dependency. 22 canvas tools on the official MCP C# SDK at the current
-  protocol revision; sessions default to Sonnet 5. Requires Claude Code (Pro/Max/Team/
-  Enterprise or a Claude Console account) on the same machine. 0.2.0 no longer connects to
-  current Claude Code; the Package Manager updates you. Rhino 8 on Windows, SR18 or newer;
-  Mac support is planned.
+  protocol revision; sessions default to Sonnet 5. Requires Claude Code
+  (Pro/Max/Team/Enterprise or a Claude Console account) on the same machine. 0.2.0 no
+  longer connects to current Claude Code; the Package Manager updates you. Rhino 8 on
+  Windows, SR18 or newer; Mac support is planned.
 url: https://ifylab.dev
 keywords:
   - grasshopper
