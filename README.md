@@ -9,7 +9,9 @@
 
 Your own Claude Code, live in Grasshopper. One click connects a Claude terminal to your canvas: it reads the data actually flowing through your wires, writes typed Python components, runs them, reads Grasshopper's errors, and fixes them — while you watch.
 
-![A staged Wireify socket becomes a live terrain component: Claude reads the wired surface, asks how to treat a Panel-fed height input, builds the component in place, and reworks it through the user's corrections](assets/demo/surface-loop.gif)
+![The companion page beside Rhino and Grasshopper: a slider drag moves the relaxed shell on the canvas and in the page's 3D view at once, and the key figures and charts follow](assets/demo/app-sync-loop.gif)
+
+**New in 0.3:** every definition can carry a companion web app — a browser page the plugin serves on your own machine, in step with the canvas both ways, with a 3D view, figures, and a baked HTML report; using it needs no Claude session. The full list is in the [changelog](CHANGELOG.md).
 
 **Install:** in Rhino 8 on Windows, run `_PackageManager`, search **wireify**, install, restart Rhino. Check [Requirements](#requirements) first — Rhino 8 SR18 or newer on Windows, and Claude Code on a paid plan. Mac support is planned; Rhino 7 is not supported. Building from source works too (below).
 
@@ -30,11 +32,37 @@ Your own Claude Code, live in Grasshopper. One click connects a Claude terminal 
 5. Claude reads the live input data (tree shapes, types, samples), writes the script, and converts the socket **in place** into a normal Python 3 script component — same position, wires kept, outputs solved and ready to wire on. Expect an approval prompt the first time Claude uses each canvas-changing tool (the convert here) — that is normal Claude Code permissions, not a broken install; read-only introspection never prompts.
 6. Revise any time: `revise #1: also return the rejected points.` Converted components are edited in place.
 
+<p align="center">
+  <img src="assets/demo/socket-plate.png" alt="The socket's plate: the app's address, one line saying what to do next, and the Build and Open app buttons" width="520">
+</p>
+
 The converted component is a stock Rhino component. **Files you save have no Wireify dependency** — colleagues without the plugin open them like any other definition. Only unconverted sockets (a transient authoring state) need Wireify present.
 
 Two more things the loop gives you when you want them: ask for a **companion app page** (`make me an app page with the load sliders and the member table`) and the session scaffolds a live browser page for the definition — drag there or on the canvas, both stay in step; and from that page, **save report** bakes a frozen, self-contained HTML record of the current state (viewport image, charts, tables, inputs at capture) that opens anywhere with zero network — a deliverable, not the app. Objects the agent creates or writes carry a small blue `wireify` capsule on the canvas, so what a session added is visible at a glance (document-stored and inert — the file still opens stock everywhere; `clear_badge` removes one deliberately).
 
 ## See it work
+
+### The companion app
+
+Drop a socket on a definition and click **Build**: a terminal opens in the definition's home, and Claude builds a page for it — sliders in a rail beside a 3D view, key figures, charts. A drag on the page or on the canvas keeps both in step, and the page keeps improving from the open terminal while the model updates:
+
+![A socket reading Build and no app yet, then a Claude terminal open in the definition's home: the companion page comes up beside Rhino and keeps improving while the relaxed shell updates on the canvas, in the page's 3D view, and in its figures](assets/demo/app-build-loop.gif)
+
+| The page and the canvas share one state | Claude improves the page from the terminal |
+|---|---|
+| ![The companion page beside Rhino and Grasshopper: the strength factor reads 37.371 on the canvas slider and on the page, whose 3D view shows the relaxed shell coloured by height](assets/demo/app-and-canvas.png) | ![The Claude terminal over the canvas reporting two fixes to the page, a renamed key figure and a wording pass, while the page shows the relaxed net view](assets/demo/claude-improves-the-page.png) |
+
+A companion app built this way is public: [halo.ifylab.dev](https://halo.ifylab.dev) runs a tensegrity definition as a browser page, with the Grasshopper file it came from beside it.
+
+<p align="center">
+  <a href="https://halo.ifylab.dev"><img src="assets/demo/halo-page.png" alt="HALO at halo.ifylab.dev: six sliders shape a tensegrity rope of struts and cables, drawn live in a 3D view" width="560"></a>
+</p>
+
+### The conversion loop
+
+Captured on 0.2, when the socket's button read **Connect**; it reads **Build** now, and the loop is the same. On a fresh definition: Claude reads the wired surface, asks how to treat a Panel-fed height input, builds the component in place, and reworks it through the user's corrections:
+
+![A staged Wireify socket becomes a live terrain component: Claude reads the wired surface, asks how to treat a Panel-fed height input, builds the component in place, and reworks it through the user's corrections](assets/demo/surface-loop.gif)
 
 On an existing definition: the socket's inputs come off a native chain of components. Claude traces what feeds them, asks two engineering questions (course height, what "random orientation" should mean for a wall that must stand), then builds the stacking component — every brick oriented, one branch per row:
 
@@ -45,8 +73,6 @@ On an existing definition: the socket's inputs come off a native chain of compon
 | ![Claude asks how to treat a Panel-fed height input before writing any code](assets/demo/height-input-question.png) | ![Claude reports the traced upstream chain and the user's answers before building](assets/demo/brick-wall-session.png) |
 
 ![A roof truss generated from a JSON panel through one converted component, with named chord, vertical, and diagonal outputs](assets/demo/truss-from-json.png)
-
-A companion app built this way is public: [halo.ifylab.dev](https://halo.ifylab.dev) runs a tensegrity definition as a browser page, with the Grasshopper file it came from beside it.
 
 ## Requirements
 
