@@ -44,6 +44,11 @@ namespace WireifyCore.Bridge
         /// <summary>Live read of one wired input after the last solve (the edge).</summary>
         InputData ReadInputData(Guid id, string inputParam, int maxPerBranch = 5, int maxTotal = 50);
 
+        /// <summary>The port flow's equivalence step made mechanical: both components' outputs
+        /// after the last solve, matched by name, compared on tree shape and on values within an
+        /// absolute tolerance (the document's by default). Read-only.</summary>
+        OutputComparison CompareOutputs(Guid idA, Guid idB, double? tolerance = null, int maxItems = 10000, int maxMismatches = 10);
+
         RuntimeInfo GetRuntimeInfo();
 
         /// <summary>Read a script component's current source (Rhino 8 script components and legacy

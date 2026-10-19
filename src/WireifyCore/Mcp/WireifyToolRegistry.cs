@@ -100,6 +100,20 @@ namespace WireifyCore.Mcp
                 UseStructuredContent = true,
             });
 
+            Add((Func<Guid, Guid, double?, int, int, OutputComparison>)t.CompareOutputs, new McpServerToolCreateOptions
+            {
+                Name = "compare_outputs",
+                Description = "Compare two components' outputs after the last solve - the port flow's equivalence check, done "
+                    + "mechanically instead of by eye: outputs matched by name, tree shape (paths, per-branch counts) and values "
+                    + "compared, numbers/points/vectors/lines/planes/intervals within an absolute tolerance (the document's by "
+                    + "default), text/booleans/colours verbatim. allEqual is true only when every output matches with nothing "
+                    + "unsupported, missing or truncated - the only basis for claiming equivalence. Curves, surfaces, meshes and "
+                    + "breps are not value-compared: they come back in manualCheck (compare a derived number - length, area, "
+                    + "vertex count - or by eye). mismatches lists the first few with path and index; the counts stay complete.",
+                ReadOnly = true,
+                UseStructuredContent = true,
+            });
+
             Add((Func<Guid, string, int, int, InputData>)t.ReadInputData, new McpServerToolCreateOptions
             {
                 Name = "read_input_data",

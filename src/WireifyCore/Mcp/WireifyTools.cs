@@ -147,6 +147,14 @@ namespace WireifyCore.Mcp
             => Guard("read_input_data", () =>
                 _bridge.ReadInputData(id, Require(inputParam, nameof(inputParam)), maxPerBranch, maxTotal));
 
+        public OutputComparison CompareOutputs(
+            [Description("InstanceGuid of the first component (the original).")] Guid idA,
+            [Description("InstanceGuid of the second component (the port).")] Guid idB,
+            [Description("Absolute tolerance for numbers, points, vectors, lines, planes and intervals (default: the Rhino document's absolute tolerance).")] double? tolerance = null,
+            [Description("Max items read per output; past it the output's verdict is marked partial (default 10000; <=0 = no cap).")] int maxItems = 10000,
+            [Description("Max mismatches listed across all outputs — the per-output counts stay complete (default 10).")] int maxMismatches = 10)
+            => Guard("compare_outputs", () => _bridge.CompareOutputs(idA, idB, tolerance, maxItems, maxMismatches));
+
         public RuntimeInfo GetRuntimeInfo()
             => Guard("get_runtime_info", () => _bridge.GetRuntimeInfo());
 

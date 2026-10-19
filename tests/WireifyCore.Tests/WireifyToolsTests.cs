@@ -22,6 +22,21 @@ public class WireifyToolsTests
     }
 
     [Fact]
+    public void CompareOutputs_passes_both_ids_the_tolerance_and_the_caps_through()
+    {
+        var fake = new FakeBridge();
+        var tools = new WireifyTools(fake);
+        var other = new Guid("22222222-2222-2222-2222-222222222222");
+
+        var result = tools.CompareOutputs(FakeBridge.SomeId, other, 0.5, 100, 4);
+        tools.CompareOutputs(FakeBridge.SomeId, other);
+
+        Assert.Contains($"CompareOutputs:{FakeBridge.SomeId}:{other}:0.5:100:4", fake.Calls);
+        Assert.Contains($"CompareOutputs:{FakeBridge.SomeId}:{other}:doc:10000:10", fake.Calls);
+        Assert.Equal(0.5, result.Tolerance);
+    }
+
+    [Fact]
     public void SetSource_validates_empty_source_before_touching_bridge()
     {
         var fake = new FakeBridge();
@@ -233,7 +248,7 @@ public class WireifyToolsTests
         // a wrong signature or bad option would throw here.
         var collection = WireifyToolRegistry.Build(new WireifyTools(new FakeBridge()));
 
-        Assert.Equal(22, collection.Count()); // 16 loop tools + get_app_info (W-B) + create_control_component + scaffold_app + clear_badge + rename_component + get_document_graph
+        Assert.Equal(23, collection.Count()); // 16 loop tools + get_app_info (W-B) + create_control_component + scaffold_app + clear_badge + rename_component + get_document_graph + compare_outputs
     }
 
     [Fact]
@@ -589,6 +604,7 @@ public class WireifyToolsTests
         public DocumentGraph GetDocumentGraph(IReadOnlyList<Guid>? ids = null, bool includeParams = true, bool includeOutputs = false,
             int maxComponents = SummaryBounding.DefaultMaxComponents, string? nameFilter = null) => Throw<DocumentGraph>();
         public InputData ReadInputData(Guid id, string inputParam, int maxPerBranch = 5, int maxTotal = 50) => Throw<InputData>();
+        public OutputComparison CompareOutputs(Guid idA, Guid idB, double? tolerance = null, int maxItems = 10000, int maxMismatches = 10) => Throw<OutputComparison>();
         public RuntimeInfo GetRuntimeInfo() => Throw<RuntimeInfo>();
         public ScriptSource GetSource(Guid id) => Throw<ScriptSource>();
         public Guid CreatePythonComponent(PythonRuntime runtime, string? nickName = null) => Throw<Guid>();

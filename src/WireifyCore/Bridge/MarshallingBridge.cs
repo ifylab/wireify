@@ -106,6 +106,9 @@ namespace WireifyCore.Bridge
         public InputData ReadInputData(Guid id, string inputParam, int maxPerBranch = 5, int maxTotal = 50)
             => Call("read_input_data", () => _inner.ReadInputData(id, inputParam, maxPerBranch, maxTotal));
 
+        public OutputComparison CompareOutputs(Guid idA, Guid idB, double? tolerance = null, int maxItems = 10000, int maxMismatches = 10)
+            => Call("compare_outputs", () => _inner.CompareOutputs(idA, idB, tolerance, maxItems, maxMismatches));
+
         public RuntimeInfo GetRuntimeInfo()
             => Call("get_runtime_info", () => _inner.GetRuntimeInfo());
 

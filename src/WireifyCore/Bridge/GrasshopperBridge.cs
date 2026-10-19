@@ -342,6 +342,80 @@ namespace WireifyCore.Bridge
             return InputDataShaper.Shape(reportName, AccessOf(param), branches, maxPerBranch, maxTotal, maxValueChars);
         }
 
+        public OutputComparison CompareOutputs(Guid idA, Guid idB, double? tolerance = null, int maxItems = 10000, int maxMismatches = 10)
+        {
+            var doc = Doc();
+            var a = AsComponent(Find(doc, idA));
+            var b = AsComponent(Find(doc, idB));
+            var tol = tolerance ?? DocUnitsOf().Tolerance ?? 0.001;
+            return OutputComparer.Compare(ReadComparable(a, maxItems), ReadComparable(b, maxItems), tol, maxMismatches);
+        }
+
+        static IReadOnlyList<ComparableOutput> ReadComparable(IGH_Component comp, int maxItems)
+            => comp.Params.Output.Select(p => ReadComparable(p, maxItems)).ToList();
+
+        /// <summary>Every item, typed through the goo's own value (never its display string, whose
+        /// precision is for reading, not comparing), up to <paramref name="maxItems"/>: a port's
+        /// equivalence check has to see all the data, and the cap keeps a huge wire from pinning
+        /// Rhino. Runs on the UI thread.</summary>
+        static ComparableOutput ReadComparable(IGH_Param param, int maxItems)
+        {
+            var branches = new List<ComparableBranch>();
+            var read = 0;
+            var truncated = false;
+            var volatileData = param.VolatileData;
+            foreach (var path in volatileData.Paths)
+            {
+                var items = new List<ComparableItem>();
+                foreach (var item in volatileData.get_Branch(path))
+                {
+                    if (item is null) continue;
+                    if (maxItems > 0 && read >= maxItems) { truncated = true; break; }
+                    items.Add(ToComparable(item));
+                    read++;
+                }
+                branches.Add(new ComparableBranch(path.ToString(), items));
+                if (truncated) break;
+            }
+            return new ComparableOutput(ParamKey(param), branches, truncated);
+        }
+
+        static ComparableItem ToComparable(object item)
+        {
+            try
+            {
+                switch (item)
+                {
+                    case GH_Number n: return new ComparableItem(ComparableKind.Number, n.TypeName, new[] { n.Value });
+                    case GH_Integer i: return new ComparableItem(ComparableKind.Integer, i.TypeName, new[] { (double)i.Value });
+                    case GH_Boolean b: return new ComparableItem(ComparableKind.Boolean, b.TypeName, Text: b.Value ? "true" : "false");
+                    case GH_String s: return new ComparableItem(ComparableKind.Text, s.TypeName, Text: s.Value ?? "");
+                    case GH_Point p: return new ComparableItem(ComparableKind.Point, p.TypeName, new[] { p.Value.X, p.Value.Y, p.Value.Z });
+                    case GH_Vector v: return new ComparableItem(ComparableKind.Vector, v.TypeName, new[] { v.Value.X, v.Value.Y, v.Value.Z });
+                    case GH_Line l:
+                        return new ComparableItem(ComparableKind.Line, l.TypeName,
+                            new[] { l.Value.From.X, l.Value.From.Y, l.Value.From.Z, l.Value.To.X, l.Value.To.Y, l.Value.To.Z });
+                    case GH_Plane pl:
+                    {
+                        var v = pl.Value;
+                        return new ComparableItem(ComparableKind.Plane, pl.TypeName, new[]
+                        {
+                            v.Origin.X, v.Origin.Y, v.Origin.Z, v.XAxis.X, v.XAxis.Y, v.XAxis.Z,
+                            v.YAxis.X, v.YAxis.Y, v.YAxis.Z, v.ZAxis.X, v.ZAxis.Y, v.ZAxis.Z,
+                        });
+                    }
+                    case GH_Interval iv: return new ComparableItem(ComparableKind.Interval, iv.TypeName, new[] { iv.Value.T0, iv.Value.T1 });
+                    case GH_Colour c: return new ComparableItem(ComparableKind.Colour, c.TypeName, Text: c.Value.ToArgb().ToString("X8"));
+                    case IGH_Goo g: return new ComparableItem(ComparableKind.Unsupported, g.TypeName);
+                    default: return new ComparableItem(ComparableKind.Unsupported, item.GetType().Name);
+                }
+            }
+            catch
+            {
+                return new ComparableItem(ComparableKind.Unsupported, (item as IGH_Goo)?.TypeName ?? item.GetType().Name);
+            }
+        }
+
         public RuntimeInfo GetRuntimeInfo()
         {
             var version = RhinoApp.Version?.ToString() ?? "unknown";

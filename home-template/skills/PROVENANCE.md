@@ -24,6 +24,14 @@ Two in-file notes, both marked "*Wireify note:*" where they sit; nothing else in
 - **`rhino-grasshopper-dev/SKILL.md`** — one note under the title: the RhinoMCP server / `run_python` tools it describes do not exist in a Wireify home (live automation goes through the `wireify` tools). A reader opening the file directly now sees the override that previously lived only in `wireify-loop` and here.
 - **`scripting-reference/SKILL.md`** — the closing sentence pointed at a `references/` subdirectory that is not vendored with this skill; removed, with a note in its place.
 
+### Local modifications (2026-10-18) — the scripting-reference split
+
+The vendored `scripting-reference/SKILL.md` was one 1,323-line file: the whole cookbook entered context whenever the skill triggered. It is now a router plus `references/`, one file per section, so a which-API question reads one targeted file:
+
+- `SKILL.md` keeps the frontmatter and section 1 (why code, the scripting spectrum, choosing a language, the Python vs C# comparison), then a "Reference files" index, the original closing line, and a note marking the split.
+- `references/rhinoscriptsyntax.md`, `rhinocommon.md`, `ghpython.md`, `csharp-grasshopper.md`, `revit-python.md`, `threejs.md`, `cross-platform-patterns.md`, `environment-setup.md` hold sections 2 to 9, text moved verbatim from the `## ` heading of each to the line before the next (blank-line trimming at the file ends only). The MIT terms carry over to every file.
+- The 2026-07-24 note about the upstream `references/` directory is replaced by the split note, since the skill now has a `references/` of its own.
+
 ## Authored for Wireify
 
 All Apache-2.0:

@@ -3,6 +3,23 @@
 All notable changes to Wireify are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [Unreleased]
+
+### Added
+
+- `compare_outputs`, canvas tool #23: the port flow's equivalence step done mechanically. Two
+  components' outputs after the last solve, matched by name, compared on tree shape and on
+  values — numbers, points, vectors, lines, planes and intervals within the document's absolute
+  tolerance, text, booleans and colours verbatim. Curves, surfaces, meshes and breps are not
+  approximated: they come back as a manual check. Read-only and pre-approved in new homes; the
+  `wireify-port` skill's diff step now calls it instead of reading report samples by eye.
+
+### Changed
+
+- The vendored `scripting-reference` skill is a router plus `references/`, one file per section
+  (text unchanged), so a which-API question reads one targeted file instead of the whole 38 KB
+  cookbook. Homes pick the layout up on their next Connect.
+
 ## [0.3.0] - 2026-09-16
 
 The companion web app. Every definition can now carry a browser page the plugin serves on

@@ -20,7 +20,7 @@ The documented Grasshopper pain: AI rewrites a legacy IronPython 2 script as Pyt
 3. **Regenerate, typed, on CPython 3.** `create_python_component` `runtime: cpython3`; **`set_io`** with the original's input/output names and data-sized access (plain script-mode derives nothing from source); `set_source` with the ported code (`#! python 3` is auto-prepended; add `# r:` lines for any pip deps the new code needs).
 4. **Wire both in parallel.** Feed the **same** upstream outputs into both the old component and the new one.
 5. **Run both.** `set_source` already returned the new component's post-solve report (messages + outputs); `run` the legacy one — its result carries the report too. `read_runtime_errors` only re-reads without solving.
-6. **Diff outputs.** Compare data-tree structure and values **within document tolerance** (geometry is equivalent if within tolerance, not bitwise). If they differ, diagnose -- almost always a Py2/Py3 idiom (below) or a RhinoCommon/rhinoscriptsyntax signature drift between runtimes (check `scripting-reference` + `get_runtime_info`) -- fix the new component, re-run, re-diff. Loop until equivalent.
+6. **Diff outputs.** One `compare_outputs` call with the old and the new component's ids (read-only, pre-approved): outputs matched by name, tree shape and values compared, numbers and geometry coordinates within the document's absolute tolerance, text verbatim. Read `allEqual` and `summary`; on a miss, `mismatches` carries the path, the index, both values and the reason. Outputs in `manualCheck` (curves, surfaces, meshes, breps) are not value-compared: compare a derived number for them (a length, an area, a vertex count through a small extra output on both sides) or by eye, and say so. If they differ, diagnose -- almost always a Py2/Py3 idiom (below) or a RhinoCommon/rhinoscriptsyntax signature drift between runtimes (check `scripting-reference` + `get_runtime_info`) -- fix the new component, re-run, re-compare. Loop until `allEqual`.
 7. **Cut over (with approval).** Replacing or deleting the released old component changes the public surface (its GUID and wiring). **Stop and get explicit approval** before deleting/replacing it. Then record the port + any gotcha in `MEMORY.md`.
 
 ## Py2 -> Py3 idiom checklist (the usual breakages)
@@ -37,8 +37,9 @@ The documented Grasshopper pain: AI rewrites a legacy IronPython 2 script as Pyt
 
 ## Equivalence discipline
 
-- Compare **tree structure** (path count, branch shape) and **values within tolerance**, per output. A passing diff is the only basis for claiming equivalence -- never claim it from reading the code.
-- If outputs are geometry, compare within the document's absolute/angle tolerance, not exact equality.
+- `compare_outputs` is the diff: **tree structure** (paths, per-branch counts) and **values within tolerance**, per output. Its `allEqual: true` is the only basis for claiming equivalence -- never claim it from reading the code, and never from eyeballing report samples (they are display strings, capped and rounded).
+- Geometry the tool cannot value-compare comes back in `manualCheck`; the claim then rests on a derived number compared the same way, and the final message names what was checked by eye.
+- A `partial` note means the read hit the item cap: raise `maxItems` or narrow the data before claiming anything.
 - Keep both components on the canvas until the diff passes; only then propose the cutover.
 
 ## Boundaries

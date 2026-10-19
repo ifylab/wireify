@@ -57,6 +57,12 @@ internal sealed class FakeBridge : IGrasshopperBridge
     public InputData ReadInputData(Guid id, string inputParam, int maxPerBranch = 5, int maxTotal = 50)
     { Calls.Add($"ReadInputData:{id}:{inputParam}:{maxPerBranch}:{maxTotal}"); return new InputData(inputParam, "item", new TreeInfo(0, 0, true), new List<TypeCount>(), new List<DataSample>()); }
 
+    public OutputComparison CompareOutputs(Guid idA, Guid idB, double? tolerance = null, int maxItems = 10000, int maxMismatches = 10)
+    {
+        Calls.Add($"CompareOutputs:{idA}:{idB}:{tolerance?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "doc"}:{maxItems}:{maxMismatches}");
+        return OutputComparer.Compare(new List<ComparableOutput>(), new List<ComparableOutput>(), tolerance ?? 0.001, maxMismatches);
+    }
+
     public RuntimeInfo GetRuntimeInfo()
     { Calls.Add("GetRuntimeInfo"); return new RuntimeInfo("8.0", new List<string> { "cpython3" }, "3.9", false, WireifyCore.WireifyBuild.Describe()); }
 
