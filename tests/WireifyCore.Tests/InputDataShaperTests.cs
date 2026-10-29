@@ -239,4 +239,35 @@ public class InputDataShaperTests
         Assert.Equal(4000, sampleCapped.Samples[0].ValueLength);
         Assert.Equal(big, reportRoomy.Samples[0].Value); // 8k report budget keeps a probe dump whole
     }
+
+    [Fact]
+    public void Items_past_the_scan_cap_count_toward_the_data_and_flag_the_histogram_partial()
+    {
+        var scanned = Branch("{0}", ("Number", "Double", "1"), ("Number", "Double", "2"));
+        var rest = new ShapedBranch("{1}", new List<ShapedItem>(), Unscanned: 998);
+
+        var input = InputDataShaper.Shape("x", "tree", new[] { scanned, rest }, 5, 50);
+
+        Assert.Equal(1000, input.Tree.DataCount);
+        Assert.True(input.Tree.ScanTruncated);
+        Assert.Equal(2, Assert.Single(input.Types).Count); // the histogram covers the scanned items
+        Assert.True(input.SamplesTruncated);
+    }
+
+    [Fact]
+    public void Nulls_are_counted_and_a_complete_scan_leaves_both_flags_absent()
+    {
+        var withNulls = new ShapedBranch("{0}", new[] { new ShapedItem("Number", "Double", "", "1") }, Nulls: 3);
+
+        var input = InputDataShaper.Shape("x", "list", new[] { withNulls }, 5, 50);
+        var clean = InputDataShaper.Shape("x", "list", new[] { Branch("{0}", ("Number", "Double", "1")) }, 5, 50);
+
+        Assert.Equal(3, input.Tree.NullCount);
+        Assert.Equal(1, input.Tree.DataCount);
+        Assert.Null(input.Tree.ScanTruncated);
+        Assert.Null(clean.Tree.NullCount);
+        var json = System.Text.Json.JsonSerializer.Serialize(clean.Tree);
+        Assert.DoesNotContain("NullCount", json);
+        Assert.DoesNotContain("ScanTruncated", json);
+    }
 }

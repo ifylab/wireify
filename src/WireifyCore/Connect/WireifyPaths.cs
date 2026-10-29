@@ -39,6 +39,9 @@ namespace WireifyCore.Connect
         /// at Connect, bundled skills winning name collisions.</summary>
         public string SharedSkillsDir => Path.Combine(Root, "skills");
         public string LogsDir => Path.Combine(Root, "logs");
+        /// <summary>Per-home usage ledgers (<c>&lt;homeId&gt;.json</c>): wireify call counts and
+        /// session rows, local only.</summary>
+        public string UsageDir => Path.Combine(Root, "usage");
 
         public string HomeFor(string ghFilePath) => Path.Combine(ProjectsDir, HomeId(ghFilePath));
 

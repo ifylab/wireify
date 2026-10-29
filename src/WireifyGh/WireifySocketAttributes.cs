@@ -18,7 +18,7 @@ namespace WireifyGh
     /// look. Everything on the plate is composed at paint time from live state
     /// (<see cref="SocketCopy"/>) — nothing here is written into the definition.
     /// </summary>
-    internal sealed class WireifySocketAttributes : GH_ComponentAttributes
+    internal sealed class WireifySocketAttributes : GH_ComponentAttributes, IWireifyFootprint
     {
         const float BadgeMinWidth = 28f;
         const float BadgeHeight = 14f;
@@ -80,6 +80,12 @@ namespace WireifyGh
             // routing cover it.
             Bounds = new RectangleF(body.X, body.Y, body.Width, _plateBounds.Bottom - body.Y);
         }
+
+        /// <summary>Bounds plus the plate, which can be wider than the body (B71). Bounds already
+        /// cover the plate vertically.</summary>
+        public (float X, float Y, float Width, float Height) Footprint => WireifyFootprint.Union(
+            (Bounds.X, Bounds.Y, Bounds.Width, Bounds.Height),
+            (_plateBounds.X, _plateBounds.Y, _plateBounds.Width, _plateBounds.Height));
 
         protected override void Render(GH_Canvas canvas, Graphics graphics, GH_CanvasChannel channel)
         {

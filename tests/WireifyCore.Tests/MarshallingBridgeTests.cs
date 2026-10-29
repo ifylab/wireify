@@ -148,4 +148,66 @@ public class MarshallingBridgeTests
         Assert.Null(sink[2]);
         Assert.Null(sink[3]);
     }
+
+    [Fact]
+    public void Each_call_is_observed_with_its_outcome_and_calling_home()
+    {
+        var seen = new List<CallObservation>();
+        var fake = new FakeBridge { SetIoThrows = new InvalidOperationException("boom") };
+        var bridge = new MarshallingBridge(fake, new InlineUiInvoker(), observed: seen.Add);
+
+        WireifySessionContext.CurrentHomeId = "tower-a1b2c3d4";
+        try
+        {
+            bridge.GetRuntimeInfo();
+            Assert.Throws<InvalidOperationException>(() =>
+                bridge.SetIo(FakeBridge.SomeId, Array.Empty<IoParamSpec>(), Array.Empty<IoParamSpec>()));
+            WireifySessionContext.PathFirst = true;
+            bridge.GetRuntimeInfo();
+        }
+        finally { WireifySessionContext.CurrentHomeId = null; WireifySessionContext.PathFirst = false; }
+        bridge.GetRuntimeInfo();
+
+        Assert.Equal(4, seen.Count);
+        Assert.Equal(("get_runtime_info", true, "tower-a1b2c3d4", false), (seen[0].Tool, seen[0].Ok, seen[0].HomeId, seen[0].AppSurface));
+        Assert.Equal(("set_io", false), (seen[1].Tool, seen[1].Ok));
+        Assert.True(seen[2].AppSurface);
+        Assert.Null(seen[3].HomeId);
+    }
+
+    [Fact]
+    public void A_throwing_observer_never_fails_the_call()
+    {
+        var bridge = new MarshallingBridge(new FakeBridge(), new InlineUiInvoker(),
+            observed: _ => throw new InvalidOperationException("observer bug"));
+
+        Assert.Equal(FakeBridge.SomeId, bridge.CreatePythonComponent(PythonRuntime.CPython3));
+    }
+
+    [Fact]
+    public void App_refusals_log_the_page_copy_and_mcp_refusals_keep_the_session_sentence()
+    {
+        var logs = new List<(string Message, bool Ok)>();
+        var refusal = new DocRoutingException(ErrorProtocol.DocNotOpenCode, DocResolution.NotOpen, "tower.gh",
+            ErrorProtocol.DocNotOpen("tower.gh"));
+        var fake = new FakeBridge { ReadAppStateThrows = refusal, GetSourceThrows = refusal };
+        var bridge = new MarshallingBridge(fake, new InlineUiInvoker(), (m, ok) => logs.Add((m, ok)));
+
+        WireifySessionContext.CurrentHomeId = "tower-a1b2c3d4";
+        try
+        {
+            WireifySessionContext.PathFirst = true;
+            Assert.ThrowsAny<Exception>(() => bridge.ReadAppState(new AppQuery(Array.Empty<Guid>(), new List<AppViewRef>())));
+            WireifySessionContext.PathFirst = false;
+            Assert.ThrowsAny<Exception>(() => bridge.GetSource(FakeBridge.SomeId));
+        }
+        finally { WireifySessionContext.CurrentHomeId = null; WireifySessionContext.PathFirst = false; }
+
+        var app = Assert.Single(logs, l => l.Message.StartsWith("app_state"));
+        Assert.Contains("refused for the app", app.Message);
+        Assert.Contains("definition closed — 'tower.gh' is not open in this Rhino", app.Message);
+        Assert.DoesNotContain("this session is connected", app.Message);
+        Assert.Contains(logs, l => l.Message.StartsWith("get_source failed") && l.Message.Contains("this session is connected"));
+    }
 }
+

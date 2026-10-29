@@ -6,6 +6,11 @@ using System.Threading;
 
 namespace WireifyCore.Bridge
 {
+    /// <summary>One finished call, as structured fields for subscribers that must not parse the log
+    /// text (the usage ledger). <see cref="HomeId"/> is the calling session's home, null for clients
+    /// without a session header; <see cref="AppSurface"/> marks a companion-app request.</summary>
+    public sealed record CallObservation(string Tool, bool Ok, long ElapsedMs, string? HomeId, bool AppSurface = false);
+
     /// <summary>
     /// Decorates an <see cref="IGrasshopperBridge"/> so every call runs on the Grasshopper UI thread
     /// via an <see cref="IUiInvoker"/>. The build plan's load-bearing threading rule: the MCP host
@@ -27,19 +32,22 @@ namespace WireifyCore.Bridge
         readonly Action<string, bool>? _log;
         readonly Action<string>? _entryLog;
         readonly Action<SessionCallContext?>? _callContext;
+        readonly Action<CallObservation>? _observed;
         readonly TimeSpan _queueTimeout;
         readonly object _gate = new();
 
         public MarshallingBridge(
             IGrasshopperBridge inner, IUiInvoker ui,
             Action<string, bool>? log = null, TimeSpan? queueTimeout = null,
-            Action<SessionCallContext?>? callContext = null, Action<string>? entryLog = null)
+            Action<SessionCallContext?>? callContext = null, Action<string>? entryLog = null,
+            Action<CallObservation>? observed = null)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
             _ui = ui ?? throw new ArgumentNullException(nameof(ui));
             _log = log;
             _entryLog = entryLog;
             _callContext = callContext;
+            _observed = observed;
             _queueTimeout = queueTimeout ?? TimeSpan.FromSeconds(20);
         }
 
@@ -56,6 +64,7 @@ namespace WireifyCore.Bridge
             {
                 var msg = ErrorProtocol.QueueTimeout(tool, _queueTimeout.TotalSeconds);
                 _log?.Invoke(msg, false);
+                Observe(tool, false, (long)_queueTimeout.TotalMilliseconds, session);
                 throw new TimeoutException(msg);
             }
             var sw = Stopwatch.StartNew();
@@ -66,14 +75,25 @@ namespace WireifyCore.Bridge
                 _callContext?.Invoke(session);
                 var result = _ui.Invoke(body);
                 _log?.Invoke($"{tool} ok in {sw.ElapsedMilliseconds}ms", true);
+                Observe(tool, true, sw.ElapsedMilliseconds, session);
                 return result;
             }
             catch (Exception ex)
             {
                 var real = ExceptionUnwrap.Innermost(ex);
-                _log?.Invoke($"{tool} failed after {sw.ElapsedMilliseconds}ms: {real.GetType().Name}: {real.Message}", false);
-                var stack = ExceptionUnwrap.CompactStack(ex);
-                if (stack.Length > 0) _log?.Invoke($"{tool} at: {stack}", false);
+                if (real is DocRoutingException routing && session is { PathFirst: true })
+                {
+                    // A companion-app refusal is expected traffic, and the MCP sentence ("this
+                    // session is connected to ...") misdescribes it: log the page's own copy.
+                    _log?.Invoke($"{tool} refused for the app after {sw.ElapsedMilliseconds}ms: {routing.Code}: {AppRefusal(routing)}", false);
+                }
+                else
+                {
+                    _log?.Invoke($"{tool} failed after {sw.ElapsedMilliseconds}ms: {real.GetType().Name}: {real.Message}", false);
+                    var stack = ExceptionUnwrap.CompactStack(ex);
+                    if (stack.Length > 0) _log?.Invoke($"{tool} at: {stack}", false);
+                }
+                Observe(tool, false, sw.ElapsedMilliseconds, session);
                 throw;
             }
             finally
@@ -81,6 +101,17 @@ namespace WireifyCore.Bridge
                 _callContext?.Invoke(null);
                 Monitor.Exit(_gate);
             }
+        }
+
+        static string AppRefusal(DocRoutingException routing)
+            => routing.Decision == DocResolution.NotActive
+                ? ErrorProtocol.PageDocNotActive(routing.FileName ?? "the definition this app belongs to")
+                : ErrorProtocol.PageDocNotOpen(routing.FileName);
+
+        void Observe(string tool, bool ok, long ms, SessionCallContext? session)
+        {
+            try { _observed?.Invoke(new CallObservation(tool, ok, ms, session?.HomeId, session?.PathFirst ?? false)); }
+            catch { /* an observer never fails the call it watched */ }
         }
 
         public DocumentSummary GetDocumentSummary(

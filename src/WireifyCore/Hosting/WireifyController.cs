@@ -33,6 +33,8 @@ namespace WireifyCore.Hosting
         public static WireifyController Instance { get; } = new WireifyController(new SystemTerminalLauncher());
 
         const int MaxLogLines = 400;
+        /// <summary>Open terminals for one definition past which a Build warns (it never refuses).</summary>
+        const int ManyTerminals = 3;
 
         readonly object _gate = new();
         readonly ITerminalLauncher _launcher;
@@ -45,6 +47,7 @@ namespace WireifyCore.Hosting
         readonly SessionRegistry _sessions = new();
         // The last Build's steps per definition, for a panel opened after the fact (S10.5).
         readonly StepLedger _steps = new();
+        readonly UsageLedger _usage;
 
         WireifyMcpHost? _host;
         AppSurface? _appSurface;
@@ -57,6 +60,7 @@ namespace WireifyCore.Hosting
             // The writer's health notice goes to the panel + console only — routing it through
             // Log would feed it back into the writer it is reporting about.
             _sessionLog = new SessionLogWriter(new WireifyPaths().LogsDir, DateTime.Now, SessionLogNotice);
+            _usage = new UsageLedger(new WireifyPaths().UsageDir, onError: message => Log("[wireify]", message, false));
         }
 
         public event Action<WireifyConnectionState>? StateChanged;
@@ -185,7 +189,8 @@ namespace WireifyCore.Hosting
                         // File-only: the panel already shows each outcome; the file needs the
                         // entry too, so a call that never returns is visible in a post-mortem.
                         entryLog: tool => _sessionLog.Append(
-                            new WireifyLogLine(DateTime.Now, "[wireify]", $"→ {tool}", true)));
+                            new WireifyLogLine(DateTime.Now, "[wireify]", $"→ {tool}", true)),
+                        observed: _usage.Observe);
                     // The companion-app surface rides the same listener: statics + the app API
                     // per home, gated by per-home per-run tokens (never the MCP secret).
                     var appPaths = new WireifyPaths();
@@ -275,6 +280,14 @@ namespace WireifyCore.Hosting
 
                 WireifyMcpHost host;
                 lock (_gate) host = _host!;
+
+                // A Connect starts a new session for this home: close any row still open (macOS
+                // never reports the terminal closing) BEFORE the connector writes the warmup from it.
+                var connectHome = Path.GetFileName(new WireifyPaths().HomeFor(path!));
+                _usage.EndSession(connectHome);
+                var openTerminals = _sessions.TerminalCount(connectHome);
+                if (openTerminals >= ManyTerminals)
+                    Log("[wireify]", $"{openTerminals} Claude terminals are already open for this definition — this Build opens another; close the ones you no longer use", false);
 
                 var connector = new WireifyConnector(
                     new WireifyPaths(),
@@ -458,6 +471,7 @@ namespace WireifyCore.Hosting
         {
             var exit = _sessions.HandleExit(handle);
             if (exit is null) return;
+            if (exit.Remaining == 0) _usage.EndSession(exit.HomeId);
             StateChanged?.Invoke(State);
             Log("[wireify]", exit.Remaining > 0
                 ? $"a Claude terminal closed ({exit.FileName}) — {exit.Remaining} still open for it; the session stays live"

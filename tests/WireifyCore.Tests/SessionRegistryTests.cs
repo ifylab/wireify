@@ -51,7 +51,7 @@ public class SessionRegistryTests
         registry.MarkAuthenticated("tower-a1b2c3d4");
         registry.MarkAuthenticated("facade-99887766");
 
-        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 0), registry.HandleExit(towerTerminal));
+        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 0, HomeId: "tower-a1b2c3d4"), registry.HandleExit(towerTerminal));
 
         Assert.Equal(WireifyConnectionState.ServerListening, registry.StateFor(@"C:\proj\tower.gh"));
         Assert.Equal(WireifyConnectionState.Connected, registry.StateFor(@"C:\proj\facade.gh")); // untouched
@@ -76,10 +76,10 @@ public class SessionRegistryTests
         // The second launch does not un-connect a session whose first terminal authenticated.
         Assert.Equal(WireifyConnectionState.Connected, registry.StateFor(@"C:\proj\tower.gh"));
 
-        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 1), registry.HandleExit(second));
+        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 1, HomeId: "tower-a1b2c3d4"), registry.HandleExit(second));
         Assert.Equal(WireifyConnectionState.Connected, registry.StateFor(@"C:\proj\tower.gh")); // first still open
 
-        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 0), registry.HandleExit(first));
+        Assert.Equal(new SessionRegistry.TerminalExit("tower.gh", Remaining: 0, HomeId: "tower-a1b2c3d4"), registry.HandleExit(first));
         Assert.Equal(WireifyConnectionState.ServerListening, registry.StateFor(@"C:\proj\tower.gh"));
 
         Assert.Null(registry.HandleExit(first)); // already forgotten — nothing to demote twice
@@ -153,5 +153,21 @@ public class SessionRegistryTests
         Assert.Equal(WireifyConnectionState.TerminalLaunched, registry.StateFor(unnormalized));
         Assert.Equal(WireifyConnectionState.ServerStopped, registry.StateFor(null));
         Assert.Equal(WireifyConnectionState.ServerStopped, registry.StateFor(""));
+    }
+
+    [Fact]
+    public void Terminal_count_follows_the_open_terminals_of_one_home()
+    {
+        var registry = new SessionRegistry();
+        var first = new FakeHandle();
+        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), first, launched: true);
+        registry.Register("tower-a1b2c3d4", @"C:\proj\tower.gh", Guid.NewGuid(), new FakeHandle(), launched: true);
+        registry.Register("facade-99887766", @"C:\proj\facade.gh", Guid.NewGuid(), new FakeHandle(), launched: true);
+
+        Assert.Equal(2, registry.TerminalCount("tower-a1b2c3d4"));
+        registry.HandleExit(first);
+        Assert.Equal(1, registry.TerminalCount("tower-a1b2c3d4"));
+        Assert.Equal(1, registry.TerminalCount("facade-99887766"));
+        Assert.Equal(0, registry.TerminalCount("never-registered"));
     }
 }

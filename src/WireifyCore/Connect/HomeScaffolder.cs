@@ -118,25 +118,53 @@ namespace WireifyCore.Connect
             // never touched by the refresh.
             AppKitScaffolder.RefreshKit(_templateRoot, homeDir);
 
-            return new ScaffoldResult(memoryNote, MemoryStatus: MemoryStatusLine(memoryText));
+            return new ScaffoldResult(memoryNote, MemoryStatus: MemoryStatusLine(memoryText, homeDir, _templateRoot));
         }
 
         /// <summary>The Connect memory glance — lesson count, newest lesson date, and the same
-        /// usage numbers the ledger header carries — so the compounding memory is visible where
-        /// the user already looks, every Connect. Null when the ledger is not tool-shaped: the
-        /// maintenance note reports that state, and one memory line per Connect is the budget.</summary>
-        static string? MemoryStatusLine(string memoryText)
+        /// usage numbers the ledger header carries, then the archived lessons and the skills the
+        /// home learned beyond the bundled set when there are any — so the compounding memory is
+        /// visible where the user already looks, every Connect. Null when the ledger is not
+        /// tool-shaped: the maintenance note reports that state, and one memory line per Connect
+        /// is the budget.</summary>
+        static string? MemoryStatusLine(string memoryText, string homeDir, string templateRoot)
         {
             var stats = MemoryLedger.Stats(memoryText);
             if (stats is null) return null;
-            if (stats.Entries == 0) return "memory: no lessons yet";
-            return string.Format(CultureInfo.InvariantCulture,
-                "memory: {0:N0} lesson{1}{2}, {3:N0}/{4:N0} chars",
-                stats.Entries,
-                stats.Entries == 1 ? "" : "s",
-                stats.NewestDate is null ? "" : " (last " + stats.NewestDate + ")",
-                memoryText.Length,
-                MemoryBudgetChars);
+            var line = stats.Entries == 0
+                ? "memory: no lessons yet"
+                : string.Format(CultureInfo.InvariantCulture,
+                    "memory: {0:N0} lesson{1}{2}, {3:N0}/{4:N0} chars",
+                    stats.Entries,
+                    stats.Entries == 1 ? "" : "s",
+                    stats.NewestDate is null ? "" : " (last " + stats.NewestDate + ")",
+                    memoryText.Length,
+                    MemoryBudgetChars);
+            var archived = ArchivedLessons(homeDir);
+            if (archived > 0) line += string.Format(CultureInfo.InvariantCulture, "; {0:N0} archived", archived);
+            var learned = LearnedSkills(homeDir, templateRoot);
+            if (learned > 0) line += string.Format(CultureInfo.InvariantCulture, "; {0:N0} learned skill{1}", learned, learned == 1 ? "" : "s");
+            return line;
+        }
+
+        static int ArchivedLessons(string homeDir)
+        {
+            var path = Path.Combine(homeDir, "MEMORY-archive.md");
+            if (!File.Exists(path)) return 0;
+            return File.ReadAllLines(path).Count(l => l.StartsWith("### ", StringComparison.Ordinal));
+        }
+
+        /// <summary>Skill folders in the home that Wireify did not bundle: the user's shared tier
+        /// plus anything the sessions wrote.</summary>
+        static int LearnedSkills(string homeDir, string templateRoot)
+        {
+            var homeSkills = Path.Combine(homeDir, ".claude", "skills");
+            if (!Directory.Exists(homeSkills)) return 0;
+            var bundledDir = Path.Combine(templateRoot, "skills");
+            var bundled = Directory.Exists(bundledDir)
+                ? new HashSet<string>(Directory.GetDirectories(bundledDir).Select(Path.GetFileName)!, StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return Directory.GetDirectories(homeSkills).Count(d => !bundled.Contains(Path.GetFileName(d)));
         }
 
         /// <summary>Seed the shared defaults file only if it does not already exist (it is user-edited).</summary>

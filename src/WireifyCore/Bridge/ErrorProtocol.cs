@@ -62,6 +62,12 @@ namespace WireifyCore.Bridge
             $"{queueSeconds:0}s (a long solve, or Rhino is blocked); this call was NOT started. " +
             "Recovery: wait for the canvas to settle, retry once; if it repeats, stop and report it.";
 
+        /// <summary>The report remark for a disabled (locked) object, whose outputs are empty
+        /// because it does not solve.</summary>
+        public const string DisabledRemark =
+            "disabled — this object is turned off and does not solve, so its outputs are empty; " +
+            "ask the user before enabling it (Grasshopper: Enable)";
+
         public static string NoDoc() =>
             $"{NoDocCode}: no active Grasshopper document. Recovery: ask the user to open the " +
             "definition in Grasshopper, then retry.";

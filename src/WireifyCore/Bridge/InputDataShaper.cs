@@ -10,8 +10,10 @@ namespace WireifyCore.Bridge
     /// <c>Value</c> is the full string form — the shaper caps it when sampling.</summary>
     public sealed record ShapedItem(string TypeName, string Clr, string Goo, string Value);
 
-    /// <summary>One data-tree branch: its path plus the items on it.</summary>
-    public sealed record ShapedBranch(string Path, IReadOnlyList<ShapedItem> Items);
+    /// <summary>One data-tree branch: its path plus the items read from it. <c>Unscanned</c> counts
+    /// the items past the scan cap (counted, never read); <c>Nulls</c> the null items skipped in
+    /// the scanned part.</summary>
+    public sealed record ShapedBranch(string Path, IReadOnlyList<ShapedItem> Items, int Unscanned = 0, int Nulls = 0);
 
     /// <summary>
     /// Shapes a wired input's branches into the <see cref="InputData"/> contract: tree stats, a type
@@ -35,6 +37,10 @@ namespace WireifyCore.Bridge
         public const int MaxReportValueChars = 8192;
         public const int MaxReportPerBranch = 10;
 
+        /// <summary>Items read per param (type name + one record each) before the scan stops and
+        /// the rest are only counted: a million-item tree must not pin the UI thread.</summary>
+        public const int MaxScanItems = 100_000;
+
         public static InputData Shape(
             string param,
             string access,
@@ -48,8 +54,11 @@ namespace WireifyCore.Bridge
             if (maxTotal < 0) throw new ArgumentOutOfRangeException(nameof(maxTotal));
 
             var pathCount = branches.Count;
-            var dataCount = branches.Sum(b => b.Items.Count);
-            var tree = new TreeInfo(pathCount, dataCount, pathCount <= 1);
+            var dataCount = branches.Sum(b => b.Items.Count + b.Unscanned);
+            var nulls = branches.Sum(b => b.Nulls);
+            var tree = new TreeInfo(pathCount, dataCount, pathCount <= 1,
+                NullCount: nulls > 0 ? nulls : null,
+                ScanTruncated: branches.Any(b => b.Unscanned > 0) ? true : null);
 
             var types = branches
                 .SelectMany(b => b.Items)

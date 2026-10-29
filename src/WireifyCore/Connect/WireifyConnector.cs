@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using WireifyCore.Mcp;
@@ -87,10 +88,14 @@ namespace WireifyCore.Connect
             _scaffolder.SeedSharedDefaults(_paths.SharedDefaults);
             _scaffolder.MergeSharedDefaults(_paths.SharedDefaults);
             Step(new ConnectStep("[wireify]", $"home scaffolded at {homeDir}", true, "home"));
+            // Memory has its own panel row: these lines used to share the Home row and replaced
+            // its "home scaffolded" text.
             if (scaffold.MemoryNote is not null)
-                Step(new ConnectStep("[wireify]", scaffold.MemoryNote, scaffold.MemoryNoteOk, "home"));
+                Step(new ConnectStep("[wireify]", scaffold.MemoryNote, scaffold.MemoryNoteOk, "memory"));
+            var usage = UsageLedger.Read(UsageLedger.PathFor(_paths.UsageDir, Path.GetFileName(homeDir)));
             if (scaffold.MemoryStatus is not null)
-                Step(new ConnectStep("[wireify]", scaffold.MemoryStatus, true, "home"));
+                Step(new ConnectStep("[wireify]", scaffold.MemoryStatus + SessionsSuffix(usage), true, "memory"));
+            WriteWarmup(homeDir, usage);
 
             // Identity, part 2 — record + sweep: overwrite this home's home.json for the file just
             // connected, then age the OTHER homes (gone .gh -> orphan stamp -> archive/ at 90 days,
@@ -191,6 +196,27 @@ namespace WireifyCore.Connect
 
             TryWriteLog(steps);
             return new ConnectResult(port, secret, homeDir, mcpPath, preflight, launched, steps, terminal);
+        }
+
+        static string SessionsSuffix(UsageLedger.Record? usage)
+            => usage is { SessionCount: > 0 } u
+                ? string.Format(CultureInfo.InvariantCulture, "; {0:N0} session{1} recorded", u.SessionCount, u.SessionCount == 1 ? "" : "s")
+                : "";
+
+        /// <summary>The SessionStart hook prints <c>.wireify/warmup.txt</c> when it exists, so it is
+        /// rewritten (or removed) every Connect, before the terminal starts. Never fails a Connect.</summary>
+        static void WriteWarmup(string homeDir, UsageLedger.Record? usage)
+        {
+            try
+            {
+                var path = Path.Combine(homeDir, ".wireify", "warmup.txt");
+                var memoryPath = Path.Combine(homeDir, "MEMORY.md");
+                var memory = File.Exists(memoryPath) ? MemoryLedger.Stats(File.ReadAllText(memoryPath)) : null;
+                var text = UsageLedger.WarmupText(usage, memory);
+                if (text is null) { if (File.Exists(path)) File.Delete(path); }
+                else HomeScaffolder.WriteAllText(path, text);
+            }
+            catch { /* the warmup is a courtesy */ }
         }
 
         /// <summary>The home's standing model, from the seeded <c>wireify.json</c> at the home root

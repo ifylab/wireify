@@ -129,23 +129,28 @@ namespace WireifyCore.Bridge
                     wireify.Add(new WireifyComponentInfo(
                         n, comp.InstanceGuid, comp.NickName ?? "", "staged",
                         comp.Params.Input.Select(p => p.NickName ?? "").ToList(),
-                        stagedData));
+                        stagedData, !comp.Locked, InputWired(comp)));
                 }
                 else if (WireifyIds.TryParseNumber(comp.NickName, out var n2))
                 {
                     wireify.Add(new WireifyComponentInfo(
                         n2, comp.InstanceGuid, comp.NickName ?? "", "converted",
-                        comp.Params.Input.Select(p => p.NickName ?? "").ToList()));
+                        comp.Params.Input.Select(p => p.NickName ?? "").ToList(),
+                        null, !comp.Locked, InputWired(comp)));
                 }
                 else if (touched.Contains(comp.InstanceGuid))
                 {
                     wireify.Add(new WireifyComponentInfo(
                         0, comp.InstanceGuid, comp.NickName ?? "", "authored",
-                        comp.Params.Input.Select(p => p.NickName ?? "").ToList()));
+                        comp.Params.Input.Select(p => p.NickName ?? "").ToList(),
+                        null, !comp.Locked, InputWired(comp)));
                 }
             }
             return wireify.OrderBy(w => w.Number == 0 ? int.MaxValue : w.Number).ToList();
         }
+
+        static List<bool> InputWired(IGH_Component comp)
+            => comp.Params.Input.Select(p => p.Sources.Count > 0).ToList();
 
         public ComponentIntrospection IntrospectComponent(Guid id) => IntrospectObject(Find(Doc(), id));
 
@@ -283,7 +288,8 @@ namespace WireifyCore.Bridge
             IGH_Component comp => Introspect(comp),
             IGH_Param param => new ComponentIntrospection(
                 param.InstanceGuid, param.Name ?? "", param.NickName ?? "",
-                Array.Empty<ParamInfo>(), new[] { ToParamInfo(param) }, BoundsOf(param)),
+                Array.Empty<ParamInfo>(), new[] { ToParamInfo(param) }, BoundsOf(param),
+                param is IGH_ActiveObject active ? !active.Locked : null),
             _ => throw new InvalidOperationException(
                 $"Object {obj.InstanceGuid} ('{obj.Name}') is neither a component nor a param — nothing to introspect."),
         };
@@ -297,7 +303,7 @@ namespace WireifyCore.Bridge
         }
 
         static InputData ShapeParamData(IGH_Param param, string reportName, int maxPerBranch, int maxTotal,
-            int maxValueChars = InputDataShaper.MaxSampleValueChars)
+            int maxValueChars = InputDataShaper.MaxSampleValueChars, int maxScan = InputDataShaper.MaxScanItems)
         {
             // Read VolatileData into a plain representation, then let the pure shaper do the
             // histogram / sampling / tree stats (so that logic is unit-tested without Rhino).
@@ -309,13 +315,24 @@ namespace WireifyCore.Bridge
             var branches = new List<ShapedBranch>();
             var typeInfoByName = new Dictionary<string, (string Clr, string Goo)>(StringComparer.Ordinal);
             var sampledTotal = 0;
+            var scanned = 0;
             foreach (var path in volatileData.Paths)
             {
                 var items = new List<ShapedItem>();
                 var sampledInBranch = 0;
-                foreach (var item in volatileData.get_Branch(path))
+                var branch = volatileData.get_Branch(path);
+                var unscanned = 0;
+                var nulls = 0;
+                foreach (var item in branch)
                 {
-                    if (item is null) continue;
+                    // Past the cap the remaining items are counted, never read (row 13).
+                    if (scanned >= maxScan)
+                    {
+                        unscanned = branch.Count - items.Count - nulls;
+                        break;
+                    }
+                    scanned++;
+                    if (item is null) { nulls++; continue; }
                     var goo = item as IGH_Goo;
                     var typeName = goo?.TypeName ?? item.GetType().Name;
                     if (!typeInfoByName.TryGetValue(typeName, out var info))
@@ -336,7 +353,7 @@ namespace WireifyCore.Bridge
                     }
                     items.Add(new ShapedItem(typeName, info.Clr, info.Goo, value));
                 }
-                branches.Add(new ShapedBranch(path.ToString(), items));
+                branches.Add(new ShapedBranch(path.ToString(), items, unscanned, nulls));
             }
 
             return InputDataShaper.Shape(reportName, AccessOf(param), branches, maxPerBranch, maxTotal, maxValueChars);
@@ -1372,6 +1389,9 @@ namespace WireifyCore.Bridge
         RuntimeReport BuildReport(GH_Document doc, IGH_DocumentObject obj, bool includeDocument)
         {
             var messages = new List<RuntimeMessage>();
+            // A disabled object reports no outputs, which reads exactly like a failed read.
+            if (obj is IGH_ActiveObject { Locked: true })
+                messages.Add(new RuntimeMessage("Remark", ErrorProtocol.DisabledRemark));
             if (obj is IGH_ActiveObject active) CollectMessages(active, messages);
             if (includeDocument)
                 foreach (var other in doc.Objects.OfType<IGH_ActiveObject>())
@@ -2228,7 +2248,8 @@ namespace WireifyCore.Bridge
                 comp.NickName ?? "",
                 comp.Params.Input.Select(p => ToParamInfo(p)).ToList(),
                 comp.Params.Output.Select(p => ToParamInfo(p)).ToList(),
-                BoundsOf(comp));
+                BoundsOf(comp),
+                !comp.Locked);
         }
 
         /// <summary>Lay an object out on demand. Grasshopper lays attributes out lazily, at the
@@ -2320,6 +2341,12 @@ namespace WireifyCore.Bridge
         {
             try
             {
+                // Attributes that draw past their Bounds (the socket's plate) report what is drawn.
+                if (obj.Attributes is IWireifyFootprint drawn)
+                {
+                    var f = drawn.Footprint;
+                    if (f.Width > 0) return new CanvasRect(f.X, f.Y, f.Width, f.Height);
+                }
                 if (obj.Attributes is { Bounds: { Width: > 0 } b })
                     return new CanvasRect(b.X, b.Y, b.Width, b.Height);
             }

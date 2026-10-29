@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using WireifyCore.Bridge;
 using WireifyCore.Connect;
 using WireifyCore.Mcp;
 
@@ -259,7 +260,8 @@ public class WireifyConnectorTests
 
         // Fresh home: the glance says so plainly.
         var first = connector.Connect(gh, host);
-        Assert.Contains(first.Steps, s => s.Message == "memory: no lessons yet" && s.Kind == "home" && s.Ok);
+        Assert.Contains(first.Steps, s => s.Message == "memory: no lessons yet" && s.Kind == "memory" && s.Ok);
+        Assert.False(File.Exists(Path.Combine(first.HomeDir, ".wireify", "warmup.txt"))); // no previous session
 
         // A lesson lands; the next Connect counts and dates it, with the header's usage numbers.
         File.AppendAllText(Path.Combine(first.HomeDir, "MEMORY.md"),
@@ -267,6 +269,21 @@ public class WireifyConnectorTests
         var second = connector.Connect(gh, host);
         Assert.Contains(second.Steps, s =>
             s.Message.StartsWith("memory: 1 lesson (last 2026-07-09), ") && s.Message.EndsWith("/8,000 chars"));
+
+        // A recorded session, an archived lesson and a learned skill join the line; the warmup
+        // for the next session names the previous one.
+        var homeId = Path.GetFileName(first.HomeDir);
+        var ledger = new UsageLedger(paths.UsageDir);
+        ledger.Observe(new CallObservation("set_source", true, 3, homeId));
+        ledger.EndSession(homeId);
+        File.WriteAllText(Path.Combine(first.HomeDir, "MEMORY-archive.md"), "# archive\n\n### 2026-06-01 [W1] old\nSymptom: s\n");
+        Directory.CreateDirectory(Path.Combine(first.HomeDir, ".claude", "skills", "my-truss-habits"));
+        var third = connector.Connect(gh, host);
+        Assert.Contains(third.Steps, s => s.Kind == "memory"
+            && s.Message.EndsWith("/8,000 chars; 1 archived; 1 learned skill; 1 session recorded"));
+        var warmup = File.ReadAllText(Path.Combine(first.HomeDir, ".wireify", "warmup.txt"));
+        Assert.StartsWith("Previous session on this definition: 1 wireify mutation, last at ", warmup);
+        Assert.Contains("last recorded lesson: 2026-07-09.", warmup);
 
         // And the homes index exists at the root, naming this home as active.
         var index = File.ReadAllText(Path.Combine(root, "homes.md"));

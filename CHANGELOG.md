@@ -13,12 +13,34 @@ All notable changes to Wireify are documented here. The format follows
   tolerance, text, booleans and colours verbatim. Curves, surfaces, meshes and breps are not
   approximated: they come back as a manual check. Read-only and pre-approved in new homes; the
   `wireify-port` skill's diff step now calls it instead of reading report samples by eye.
+- Per-home usage record at `~/.ify/wireify/usage/<home>.json`: wireify calls, failures and
+  canvas changes per tool, plus one row per Claude session. Local only; companion-app traffic
+  and clients without a session are not counted.
+- Session warmup: a new session in a home starts with two lines about the previous one (how
+  many canvas changes, when, and the newest lesson), printed by the existing session-start
+  hook. Nothing is printed for a home with no previous session.
+- The panel has a Memory row (lessons, archived lessons, learned skills, sessions recorded) and
+  an Open MEMORY.md button. The memory line no longer replaces the Home row's text.
+- `_WireifyPanel` opens the panel without a Build, so getting the panel back no longer opens
+  another Claude terminal.
+- The summary's Wireify registry carries `enabled` and `inputWired` per component, and
+  `introspect_component` carries `enabled`: a disabled component's empty report no longer reads
+  like a failed read. Run reports on a disabled object start with a remark saying so.
+- Data reads report `nullCount` when nulls were skipped.
 
 ### Changed
 
 - The vendored `scripting-reference` skill is a router plus `references/`, one file per section
   (text unchanged), so a which-API question reads one targeted file instead of the whole 38 KB
   cookbook. Homes pick the layout up on their next Connect.
+- Reading a very large tree stops reading items after 100,000 and only counts the rest:
+  `dataCount` stays true, `scanTruncated` marks the type histogram as partial. A million-item
+  wire no longer pins Rhino while a tool reads it.
+- A plated socket's reported bounds now include the plate's full width, not only its height.
+- A Build with three or more Claude terminals already open for the same definition warns in the
+  panel log (it still opens the terminal).
+- The session log records a companion-app refusal in the page's words ("definition closed —
+  ...") instead of the Claude session's sentence.
 
 ## [0.3.0] - 2026-09-16
 

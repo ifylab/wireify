@@ -39,6 +39,7 @@ namespace Wireify
         readonly Button _openHome = new Button { Text = "Open home", Enabled = false };
         readonly Button _openApp = new Button { Text = "Open app", Enabled = false };
         readonly Button _openLog = new Button { Text = "Open log" };
+        readonly Button _openMemory = new Button { Text = "Open MEMORY.md", Enabled = false };
         readonly TextArea _log = new TextArea { ReadOnly = true, Wrap = false, Font = Eto.Drawing.Fonts.Monospace(9) };
 
         readonly Action<WireifyConnectionState> _onState;
@@ -66,6 +67,7 @@ namespace Wireify
             _connect.Click += (_, _) => StartConnect();
             _openHome.Click += (_, _) => OpenFolder(_homeDir);
             _openLog.Click += (_, _) => OpenFolder(_controller.LogsDirectory);
+            _openMemory.Click += (_, _) => OpenFile(Path.Combine(_homeDir, "MEMORY.md"));
             // The use gesture, without a socket on the canvas: the live link is minted on click.
             _openApp.Click += (_, _) => Task.Run(() => _controller.OpenApp(_controller.ActiveDefinitionPath()));
 
@@ -89,6 +91,7 @@ namespace Wireify
             var steps = new TableLayout { Spacing = new Size(8, 3) };
             steps.Rows.Add(StepRow("server", "Server"));
             steps.Rows.Add(StepRow("home", "Home"));
+            steps.Rows.Add(StepRow("memory", "Memory"));
             steps.Rows.Add(StepRow("config", "Config"));
             steps.Rows.Add(StepRow("preflight", "Preflight"));
             steps.Rows.Add(StepRow("terminal", "Terminal"));
@@ -98,7 +101,7 @@ namespace Wireify
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 6,
-                Items = { _connect, _openApp, _openHome, _openLog },
+                Items = { _connect, _openApp, _openHome, _openMemory, _openLog },
             };
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -254,6 +257,7 @@ namespace Wireify
                 _docLabel.Text = "";
                 _openApp.Enabled = false;
                 _openHome.Enabled = false;
+                _openMemory.Enabled = false;
                 return;
             }
             try
@@ -268,9 +272,10 @@ namespace Wireify
                 _openApp.Enabled = status.PageExists;
                 _homeDir = status.HomeExists ? (Path.GetDirectoryName(status.AppFolder) ?? "") : "";
                 _openHome.Enabled = _homeDir.Length > 0;
+                _openMemory.Enabled = _homeDir.Length > 0 && File.Exists(Path.Combine(_homeDir, "MEMORY.md"));
                 // Rows read the ACTIVE file's last Build — cleared first, so a file with no Build
                 // shows dashes instead of the previous definition's walk (round-11 S11.27).
-                foreach (var kind in new[] { "server", "home", "config", "preflight", "terminal" })
+                foreach (var kind in new[] { "server", "home", "memory", "config", "preflight", "terminal" })
                 {
                     _rows[kind].Text = "-";
                     _rows[kind].TextColor = SystemColors.ControlText;
@@ -282,6 +287,7 @@ namespace Wireify
                 _docLabel.Text = "";
                 _openApp.Enabled = false;
                 _openHome.Enabled = false;
+                _openMemory.Enabled = false;
             }
         }
 
@@ -315,6 +321,13 @@ namespace Wireify
                 Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
             }
             catch { /* opening a folder is never worth an error dialog */ }
+        }
+
+        static void OpenFile(string path)
+        {
+            if (!File.Exists(path)) return;
+            try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+            catch { /* opening a file is never worth an error dialog */ }
         }
 
         void Ui(Action action) => Application.Instance.AsyncInvoke(action);

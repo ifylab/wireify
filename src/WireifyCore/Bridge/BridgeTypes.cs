@@ -25,14 +25,18 @@ namespace WireifyCore.Bridge
     /// created with a custom nickname, or renamed since). The document itself is the registry:
     /// numbers come from the nickname convention (<c>Number</c> is 0 for unnumbered entries),
     /// membership from the badge record — a rename must not make Wireify forget its own work
-    /// (round-6 S6.8a).</summary>
+    /// (round-6 S6.8a). <c>Enabled</c> is false for a disabled (locked) component, which
+    /// solves to nothing; <c>InputWired</c> parallels <c>InputNames</c> (true = has a source),
+    /// so wired and spare inputs read without an introspection.</summary>
     public sealed record WireifyComponentInfo(
         int Number,
         Guid Id,
         string NickName,
         string State,
         IReadOnlyList<string> InputNames,
-        IReadOnlyList<InputData>? StagedData = null);
+        IReadOnlyList<InputData>? StagedData = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Enabled = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<bool>? InputWired = null);
 
     /// <summary><c>TotalObjectCount</c> is the true document size; when the components list was
     /// capped for a big canvas, <c>ComponentsTruncated</c> is true (selected and Wireify-managed
@@ -95,14 +99,16 @@ namespace WireifyCore.Bridge
     /// <summary><c>Bounds</c> is the object's canvas rectangle, laid out on demand at read time
     /// (null only when its attributes refuse to lay out — never a placeholder) — with the
     /// params' <c>GripY</c>, the mechanical answer to "did that control land where an engineer
-    /// would put it".</summary>
+    /// would put it". <c>Enabled</c> is false for a disabled (locked) object: its report is empty
+    /// because it does not solve, not because the read failed.</summary>
     public sealed record ComponentIntrospection(
         Guid Id,
         string Name,
         string NickName,
         IReadOnlyList<ParamInfo> Inputs,
         IReadOnlyList<ParamInfo> Outputs,
-        CanvasRect? Bounds = null);
+        CanvasRect? Bounds = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Enabled = null);
 
     /// <summary>One param as the document graph carries it: the name, access, type and hint a
     /// port needs — nothing else. The param's own id, its wire counts and its layout stay with
@@ -170,7 +176,15 @@ namespace WireifyCore.Bridge
         string? Truncation = null,
         IReadOnlyList<string>? AvailableHints = null);
 
-    public sealed record TreeInfo(int PathCount, int DataCount, bool IsFlat);
+    /// <summary><c>DataCount</c> counts the non-null scanned items plus every item past the scan cap
+    /// (counted without being read, so nulls there are included). <c>NullCount</c> is the
+    /// null items seen in the scanned part (absent when none). <c>ScanTruncated</c> is true when
+    /// the per-item scan stopped at its cap: the type histogram then covers the scanned items
+    /// only (absent when the scan was complete).</summary>
+    public sealed record TreeInfo(
+        int PathCount, int DataCount, bool IsFlat,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? NullCount = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ScanTruncated = null);
 
     /// <summary><c>Clr</c> is the unwrapped native type (what a type hint or <c>.Value</c> yields);
     /// <c>Goo</c> is the Grasshopper wrapper class the script actually receives on an un-hinted

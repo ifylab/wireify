@@ -40,9 +40,9 @@ namespace WireifyCore.Hosting
             public string FileName => FileNameOf(GhPath);
         }
 
-        /// <summary>What a terminal exit meant for its session: the definition's file name and
-        /// how many of its terminals are still open (zero = the session demoted).</summary>
-        public sealed record TerminalExit(string FileName, int Remaining);
+        /// <summary>What a terminal exit meant for its session: the definition's file name, its
+        /// home, and how many of its terminals are still open (zero = the session demoted).</summary>
+        public sealed record TerminalExit(string FileName, int Remaining, string HomeId);
 
         /// <summary>Display name for logs/errors — splits on either separator so a Windows path
         /// renders correctly even where '\\' is not the platform separator.</summary>
@@ -125,8 +125,16 @@ namespace WireifyCore.Hosting
                 var remaining = session.Terminals.Count;
                 if (remaining == 0 && session.State >= WireifyConnectionState.TerminalLaunched)
                     session.State = WireifyConnectionState.ServerListening;
-                return new TerminalExit(session.FileName, remaining);
+                return new TerminalExit(session.FileName, remaining, session.HomeId);
             }
+        }
+
+        /// <summary>How many terminals launched for this home are still open (zero for a home with
+        /// no session).</summary>
+        public int TerminalCount(string homeId)
+        {
+            lock (_gate)
+                return _byHome.TryGetValue(homeId, out var session) ? session.Terminals.Count : 0;
         }
 
         /// <summary>The session state for a definition (by path), or ServerStopped when it has no

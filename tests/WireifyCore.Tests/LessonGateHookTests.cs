@@ -114,7 +114,7 @@ public class LessonGateHookTests
 
     // ---- native-shell functional runs ---------------------------------------------------------
 
-    sealed record HookRun(int ExitCode, string StdErr);
+    sealed record HookRun(int ExitCode, string StdErr, string StdOut);
 
     static HookRun RunHook(string homeDir, string baseName, string stdin = "{}")
     {
@@ -131,9 +131,10 @@ public class LessonGateHookTests
         using var p = Process.Start(psi)!;
         p.StandardInput.Write(stdin);
         p.StandardInput.Close();
+        var outTask = p.StandardOutput.ReadToEndAsync();
         var err = p.StandardError.ReadToEnd();
         p.WaitForExit();
-        return new HookRun(p.ExitCode, err);
+        return new HookRun(p.ExitCode, err, outTask.Result);
     }
 
     /// <summary>A scaffolded home arranged into "mutations ran, no lesson recorded": the marker
@@ -234,5 +235,30 @@ public class LessonGateHookTests
 
         Assert.True(File.Exists(log));
         Assert.Equal(2, File.ReadAllLines(log).Length);
+    }
+
+    [Fact]
+    public void Session_marker_prints_the_warmup_before_resetting_the_session()
+    {
+        var home = BlockableHome();
+        var stateDir = Path.Combine(home, ".wireify");
+        File.WriteAllText(Path.Combine(stateDir, "warmup.txt"), "Previous session on this definition: 2 wireify mutations\n");
+
+        var run = RunHook(home, "session-marker");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Contains("Previous session on this definition: 2 wireify mutations", run.StdOut);
+        Assert.False(File.Exists(Path.Combine(stateDir, "mutations.log")));
+    }
+
+    [Fact]
+    public void Session_marker_prints_nothing_without_a_warmup()
+    {
+        Scaffold(HomeScaffolder.HookShell.Auto, out var home);
+
+        var run = RunHook(home, "session-marker");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("", run.StdOut.Trim());
     }
 }
