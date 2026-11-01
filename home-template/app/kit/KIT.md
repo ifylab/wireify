@@ -252,7 +252,10 @@ angle, only when the model has left the frame or shrunk deep inside it. `bind` w
 hold to the app's `editingAny()`; a page with its own data layer passes its own
 `holding: () => boolean` to `create`. A camera the user is orbiting is left alone.
 `viewsEl` (a `.ify-viewport__views` span in the head) receives the named views — 3D,
-top, front, side — and fit; when the first geometry lands a translucent card with the
+top, front, side — and fit. Top, front and side are flat (orthographic), as Rhino draws its
+Top, Front and Right: pan and zoom keep them flat, and a drag that turns one hands back to
+the perspective camera at the same framing; 3D and `fly()` are always perspective, and
+`poseFor()` gives a flat view's perspective equivalent. When the first geometry lands a translucent card with the
 orbit glyph and the gestures (drag to orbit, right-drag to pan, scroll to zoom; touch
 wording on coarse pointers) sits over the canvas for two seconds or until the first grab,
 and the first framing eases in from a few degrees around the model's axis so a still page
@@ -260,8 +263,9 @@ shows a model that turns (`hint: false` and `intro: false` skip them; reduced mo
 the motion). An item in the payload may carry `color` — a CSS colour or a
 `--token` name, re-resolved on a theme flip — to be drawn apart from the rest (a member
 family, a flagged clash); a curve with a `radius` draws as a thin tube instead of a
-one-pixel line; a `markers` list (`{at: [x, y, z], radius, color}`) draws spheres on the
-model outside the item counts (a clash point, a support). The live `api/geometry` carries
+one-pixel line; a `markers` list (`{at: [x, y, z], radius, color}`) draws smooth spheres on
+the model outside the item counts (a clash point, a support, a joint), one instanced mesh per
+colour, so hundreds cost little. The live `api/geometry` carries
 none of these today; a page that builds its own payload (a standalone port) can. The interior otherwise reads exactly four
 tokens — `--ify-viewport-ground/-grid/-mesh/-edge` in `kit/ify-tokens.css` (aliases of
 the theme today); re-theme those in `theme.css`, never the module. The interior look is

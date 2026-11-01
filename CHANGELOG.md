@@ -41,6 +41,12 @@ All notable changes to Wireify are documented here. The format follows
   panel log (it still opens the terminal).
 - The session log records a companion-app refusal in the page's words ("definition closed —
   ...") instead of the Claude session's sentence.
+- The companion app's top, front and side views are flat (orthographic), as Rhino draws Top,
+  Front and Right, so a side view reads as a true elevation instead of a tunnel. Pan and zoom
+  keep a flat view flat; a drag that turns it hands back to the perspective camera at the same
+  framing. The 3D view and camera paths stay perspective.
+- Viewport markers draw as smooth spheres, one instanced mesh per colour, so a model can carry
+  a marker at every joint.
 
 ## [0.3.0] - 2026-09-16
 

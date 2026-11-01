@@ -28,14 +28,20 @@ const FETCH_DEBOUNCE_MS = 150;
 const EDGE_THRESHOLD_DEG = 25;
 // The named views a page can switch to. Z is up, like the canvas; the top view needs its
 // own up vector or the framing maths (right = forward x up) degenerates. "iso" is the
-// default framing: Rhino's perspective quarter view.
+// default framing: Rhino's perspective quarter view. The other three are `flat`: drawn
+// without perspective, as Rhino draws its Top, Front and Right - in perspective a side
+// view read as a tunnel and a front view as two halves of different sizes (HALO,
+// 2026-11-01).
 const VIEWS = {
   iso: { dir: [1, -1, 0.8], up: [0, 0, 1], label: "3D" },
-  top: { dir: [0, 0, 1], up: [0, 1, 0], label: "top" },
-  front: { dir: [0, -1, 0], up: [0, 0, 1], label: "front" },
-  side: { dir: [1, 0, 0], up: [0, 0, 1], label: "side" },
+  top: { dir: [0, 0, 1], up: [0, 1, 0], label: "top", flat: true },
+  front: { dir: [0, -1, 0], up: [0, 0, 1], label: "front", flat: true },
+  side: { dir: [1, 0, 0], up: [0, 0, 1], label: "side", flat: true },
 };
 const Z_UP = new THREE.Vector3(0, 0, 1);
+// OrbitControls' ROTATE, TOUCH_ROTATE and TOUCH_DOLLY_ROTATE states: the gestures that turn
+// the camera, which is what makes a flat view a 3D one again.
+const TURNING = new Set([0, 3, 6]);
 
 /* Resolve a CSS colour to an sRGB number for three.js - via a 2D canvas so oklch()
    tokens (which getComputedStyle hands back unresolved) still work. A value the canvas
@@ -94,9 +100,13 @@ function palette() {
    view(), dispose(), canvas}. */
 export function create(el, opts = {}) {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
-  camera.up.set(0, 0, 1); // Rhino is Z-up; the viewport must agree with the canvas
-  camera.position.set(15, -15, 12);
+  const perspective = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
+  perspective.up.set(0, 0, 1); // Rhino is Z-up; the viewport must agree with the canvas
+  perspective.position.set(15, -15, 12);
+  // The flat views' camera. Pan and zoom keep a flat view flat; a drag that turns it
+  // hands back to the perspective camera at the same framing (usePerspective).
+  const flat = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 10000);
+  let camera = perspective;
 
   // preserveDrawingBuffer so the report bake can capture the canvas as pixels.
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -110,6 +120,7 @@ export function create(el, opts = {}) {
   // life of the page (round-6 S6.7c). Damping's inertia fires "change" after "end" with
   // interacting already false, so it never arms either.
   let interacting = false;
+  let turning = false; // the gesture under way turns the camera (not a pan or a zoom)
   let userMoved = false;
   let fitted = false;
   let currentView = "iso";
@@ -124,14 +135,22 @@ export function create(el, opts = {}) {
   const DOLLY_MS = 420;
   controls.addEventListener("start", () => {
     interacting = true;
+    turning = TURNING.has(controls.state);
     hideHint();
     intro = null; // the user has the camera now
     dolly = null;
     cancelFlight();
-    // Orbit always spins about Z: a grab from the top view drops back to Z-up first.
-    if (!camera.up.equals(Z_UP)) camera.up.copy(Z_UP);
+    // Orbit always spins about Z: a grab drops back to Z-up first. A flat view keeps its
+    // own up through a pan or a zoom; turning it goes through usePerspective, which resets.
+    if (camera === perspective && !camera.up.equals(Z_UP)) camera.up.copy(Z_UP);
   });
-  controls.addEventListener("end", () => { interacting = false; });
+  controls.addEventListener("end", () => { interacting = false; turning = false; });
+  // The hand-back happens on the first MOVE of a turning drag, not at pointer-down, so a
+  // stray click leaves a flat view flat. OrbitControls registered its own pointermove
+  // first, so this move's turn is already queued and lands on the perspective camera.
+  renderer.domElement.addEventListener("pointermove", () => {
+    if (interacting && turning && camera === flat) usePerspective();
+  });
   controls.addEventListener("change", () => {
     if (!interacting) return;
     userMoved = true;
@@ -278,6 +297,7 @@ export function create(el, opts = {}) {
       content.remove(child);
       if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();
+      if (child.isInstancedMesh) child.dispose();
     }
   }
 
@@ -337,15 +357,32 @@ export function create(el, opts = {}) {
       framePoints.push(c.points);
     }
     // Markers: spheres a page places on the model (a clash point, a support, a joint to
-    // call out). They ride outside the item counts and never drive the framing.
+    // call out). They ride outside the item counts and never drive the framing. A model
+    // can carry hundreds - a joint at every node - so each colour is one instanced mesh,
+    // and a marker is smooth-shaded: up close a faceted ball reads as a polyhedron.
+    const byColor = new Map();
     for (const mk of geo.markers || []) {
       if (!mk || !mk.at || !(mk.radius > 0)) continue;
-      const g = new THREE.SphereGeometry(mk.radius, 14, 10);
-      const ball = new THREE.Mesh(g, meshMaterial(itemColor(mk.color, colors.edge)));
-      ball.position.set(mk.at[0], mk.at[1], mk.at[2]);
-      ball.userData.colorSpec = mk.color || null;
-      ball.userData.isMarker = true;
-      content.add(ball);
+      const spec = mk.color || null;
+      if (!byColor.has(spec)) byColor.set(spec, []);
+      byColor.get(spec).push(mk);
+    }
+    const place = new THREE.Matrix4();
+    const still = new THREE.Quaternion();
+    for (const [spec, list] of byColor) {
+      const balls = new THREE.InstancedMesh(
+        new THREE.SphereGeometry(1, 24, 16),
+        new THREE.MeshStandardMaterial({ color: itemColor(spec, colors.edge), metalness: 0, roughness: 0.85 }),
+        list.length);
+      list.forEach((mk, i) => {
+        place.compose(new THREE.Vector3(mk.at[0], mk.at[1], mk.at[2]), still,
+          new THREE.Vector3(mk.radius, mk.radius, mk.radius));
+        balls.setMatrixAt(i, place);
+      });
+      balls.instanceMatrix.needsUpdate = true;
+      balls.userData.colorSpec = spec;
+      balls.userData.isMarker = true;
+      content.add(balls);
     }
     if ((geo.points || []).length) {
       const g = new THREE.BufferGeometry();
@@ -382,10 +419,13 @@ export function create(el, opts = {}) {
     if (right.lengthSq() < 1e-9) right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
     right.normalize();
     const up = new THREE.Vector3().crossVectors(right, forward);
-    const vFov = (camera.fov * Math.PI) / 180;
-    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(camera.aspect, 0.01));
+    const vFov = (perspective.fov * Math.PI) / 180;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(perspective.aspect, 0.01));
     const th = Math.tan(hFov / 2);
     const tv = Math.tan(vFov / 2);
+    // A flat view's frame is its half-width and half-height, at any depth.
+    const halfW = (flat.right - flat.left) / (2 * flat.zoom);
+    const halfH = (flat.top - flat.bottom) / (2 * flat.zoom);
     const p = new THREE.Vector3();
     let edge = 0;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -393,8 +433,8 @@ export function create(el, opts = {}) {
       for (let i = 0; i + 2 < pts.length; i += 3) {
         p.set(pts[i], pts[i + 1], pts[i + 2]).sub(controls.target);
         const d = Math.max(dist + p.dot(forward), 1e-6);
-        const sx = p.dot(right) / (d * th);
-        const sy = p.dot(up) / (d * tv);
+        const sx = camera === flat ? p.dot(right) / halfW : p.dot(right) / (d * th);
+        const sy = camera === flat ? p.dot(up) / halfH : p.dot(up) / (d * tv);
         edge = Math.max(edge, Math.abs(sx), Math.abs(sy));
         if (sx < minX) minX = sx;
         if (sx > maxX) maxX = sx;
@@ -410,7 +450,8 @@ export function create(el, opts = {}) {
     if (flight) return;
     const view = framing();
     if (view.edge <= SETTLE_CLIP && view.span >= SETTLE_SPAN) return;
-    if (reduceMotion) { fit(); return; }
+    // A flat view re-frames in place: its scale is the frustum, which a dolly cannot ease.
+    if (reduceMotion || camera === flat) { fit(); return; }
     const fromPos = camera.position.clone();
     const fromTarget = controls.target.clone();
     fit();
@@ -442,6 +483,8 @@ export function create(el, opts = {}) {
     return new Promise((resolve) => {
       const path = (legs || []).filter((leg) => leg && leg.position && leg.target);
       if (!path.length) { resolve("empty"); return; }
+      // A path is walked in perspective, wherever it starts.
+      usePerspective();
       const last = path[path.length - 1];
       if (reduceMotion) {
         camera.position.fromArray(last.position);
@@ -524,8 +567,8 @@ export function create(el, opts = {}) {
     if (right.lengthSq() < 1e-9) right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
     right.normalize();
     const up = new THREE.Vector3().crossVectors(right, forward);
-    const vFov = (camera.fov * Math.PI) / 180;
-    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(camera.aspect, 0.01));
+    const vFov = (perspective.fov * Math.PI) / 180;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(perspective.aspect, 0.01));
     const th = Math.tan(hFov / 2);
     const tv = Math.tan(vFov / 2);
     const p = new THREE.Vector3();
@@ -561,10 +604,94 @@ export function create(el, opts = {}) {
   function applyFraming(framing) {
     if (!framing) return;
     controls.target.copy(framing.target);
-    camera.position.copy(framing.position);
-    camera.near = Math.max(framing.dist / 1000, 0.001);
-    camera.far = framing.dist * 100;
-    camera.updateProjectionMatrix();
+    perspective.position.copy(framing.position);
+    perspective.near = Math.max(framing.dist / 1000, 0.001);
+    perspective.far = framing.dist * 100;
+    perspective.updateProjectionMatrix();
+  }
+
+  /* A flat view's framing: the model's own points projected onto the view plane, centred
+     on their extents and padded as the perspective fit is. There is no distance to solve,
+     only the half-height of the frame, so the camera stands back outside the model. */
+  function solveFlat(dirArray, upVector) {
+    if (!bounds) return null;
+    const sets = framePoints.length ? framePoints : [cornerPoints(bounds)];
+    const centre = new THREE.Vector3(
+      (bounds[0] + bounds[3]) / 2, (bounds[1] + bounds[4]) / 2, (bounds[2] + bounds[5]) / 2);
+    const dir = new THREE.Vector3().fromArray(dirArray).normalize();
+    const forward = dir.clone().negate();
+    let right = new THREE.Vector3().crossVectors(forward, upVector);
+    if (right.lengthSq() < 1e-9) right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+    right.normalize();
+    const up = new THREE.Vector3().crossVectors(right, forward);
+    const p = new THREE.Vector3();
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const pts of sets)
+      for (let i = 0; i + 2 < pts.length; i += 3) {
+        p.set(pts[i], pts[i + 1], pts[i + 2]).sub(centre);
+        const x = p.dot(right), y = p.dot(up);
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    const target = centre.clone()
+      .addScaledVector(right, (minX + maxX) / 2)
+      .addScaledVector(up, (minY + maxY) / 2);
+    const aspect = Math.max(perspective.aspect, 0.01);
+    const halfH = Math.max((maxY - minY) / 2, (maxX - minX) / 2 / aspect, 1e-6) * 1.1;
+    const reach = Math.hypot(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2]) / 2 || 1;
+    const back = 2 * reach + 1;
+    return { position: target.clone().addScaledVector(dir, back), target, halfH, far: back + 2 * reach + 1 };
+  }
+
+  function applyFlat(framing) {
+    if (!framing) return;
+    const aspect = Math.max(perspective.aspect, 0.01);
+    controls.target.copy(framing.target);
+    flat.position.copy(framing.position);
+    flat.zoom = 1;
+    flat.top = framing.halfH;
+    flat.bottom = -framing.halfH;
+    flat.left = -framing.halfH * aspect;
+    flat.right = framing.halfH * aspect;
+    flat.near = 0.01;
+    flat.far = framing.far;
+    flat.updateProjectionMatrix();
+    flat.lookAt(framing.target);
+  }
+
+  /* Back to the perspective camera from a flat view, looking the same way at the same
+     target, from where the model's NEAR face shows the height the flat view showed. A
+     model runs deep along a flat view (a rope seen end-on): matched at the target, the
+     camera landed inside it (HALO, 2026-11-01). */
+  function usePerspective() {
+    if (camera === perspective) return;
+    const dir = flat.position.clone().sub(controls.target).normalize();
+    const halfH = (flat.top - flat.bottom) / (2 * flat.zoom);
+    let near = 0;
+    if (bounds) {
+      const corners = cornerPoints(bounds);
+      for (let i = 0; i < corners.length; i += 3) {
+        near = Math.max(near, (corners[i] - controls.target.x) * dir.x
+          + (corners[i + 1] - controls.target.y) * dir.y + (corners[i + 2] - controls.target.z) * dir.z);
+      }
+    }
+    const dist = near + halfH / Math.tan((perspective.fov * Math.PI) / 360);
+    perspective.up.copy(Z_UP);
+    perspective.position.copy(controls.target).addScaledVector(dir, dist);
+    perspective.near = Math.max(dist / 1000, 0.001);
+    perspective.far = dist * 100;
+    perspective.updateProjectionMatrix();
+    perspective.lookAt(controls.target);
+    camera = perspective;
+    controls.object = camera;
+  }
+
+  function useFlat(up) {
+    flat.up.set(up[0], up[1], up[2]);
+    camera = flat;
+    controls.object = camera;
   }
 
   function fit(direction) {
@@ -575,11 +702,13 @@ export function create(el, opts = {}) {
       : userMoved
         ? camera.position.clone().sub(controls.target).normalize().toArray()
         : VIEWS[currentView].dir;
-    applyFraming(solveFraming(dirArray, camera.up));
+    if (camera === flat) applyFlat(solveFlat(dirArray, camera.up));
+    else applyFraming(solveFraming(dirArray, camera.up));
   }
 
   /* Where a named view would land, without going there: a page flying its own path ends
-     ON the view instead of near it, so nothing jumps when the path finishes. */
+     ON the view instead of near it, so nothing jumps when the path finishes. A path flies
+     in perspective, so a flat view's pose here is its perspective equivalent. */
   function poseFor(name) {
     const v = VIEWS[name];
     if (!v) return null;
@@ -604,9 +733,16 @@ export function create(el, opts = {}) {
     if (!v) return;
     // A named view during a flight is the user changing their mind: the path stops here.
     cancelFlight("view");
+    // ...and so does an eased settle or the opening turn, or either would carry on over it.
+    dolly = null;
+    intro = null;
     currentView = name;
     userMoved = false;
-    camera.up.set(v.up[0], v.up[1], v.up[2]);
+    if (v.flat) useFlat(v.up);
+    else {
+      usePerspective();
+      camera.up.set(v.up[0], v.up[1], v.up[2]);
+    }
     fit(v.dir);
     fitted = true;
     markView();
@@ -616,8 +752,13 @@ export function create(el, opts = {}) {
     const w = el.clientWidth || 1;
     const h = el.clientHeight || 1;
     renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    perspective.aspect = w / h;
+    perspective.updateProjectionMatrix();
+    // A flat view keeps its height and widens or narrows with the canvas.
+    const halfH = (flat.top - flat.bottom) / 2;
+    flat.left = (-halfH * w) / h;
+    flat.right = (halfH * w) / h;
+    flat.updateProjectionMatrix();
     // Layout settling re-frames for free: the one fit computed against a half-laid-out
     // canvas is corrected by the next real size, until the user takes the camera.
     if (fitted && !userMoved && bounds && !flight) fit();
